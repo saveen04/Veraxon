@@ -17,6 +17,10 @@ hosting/.cache
 node_modules/
 veraxon/node_modules/
 
+# Next.js build/cache
+.next/
+veraxon/.next/
+
 # Firebase Emulators
 /firebase-*.zip
 /.firebase/
