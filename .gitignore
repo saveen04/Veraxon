@@ -13,6 +13,10 @@ hosting/.cache
 /functions/.env
 /functions/package-lock.json
 
+# Ignore project dependencies
+node_modules/
+veraxon/node_modules/
+
 # Firebase Emulators
 /firebase-*.zip
 /.firebase/
