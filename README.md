@@ -1,8 +1,5 @@
 # Veraxon – AI-Powered Online Examination Monitoring Platform
 
-<p align="center">
-  <img src="public/logov-removebg-preview.png" alt="Veraxon Logo" width="220"/>
-</p>
 
 <h1 align="center">🛡️ Veraxon</h1>
 
