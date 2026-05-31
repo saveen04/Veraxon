@@ -1,10 +1,9 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
 
-// Using the key provided by the user. 
-// In a full production environment, this would strictly be in .env.local
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "REDACTED_GEMINI_KEY";
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+if (!GEMINI_API_KEY) console.warn('[VERA] GEMINI_API_KEY is not set in environment variables.');
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY || '');
 
 export async function POST(req) {
   try {
