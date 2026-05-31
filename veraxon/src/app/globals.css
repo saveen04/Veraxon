@@ -1,0 +1,256 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 237, 237, 237;
+  --background-start-rgb: 3, 3, 3;
+  --background-end-rgb: 5, 5, 5;
+  
+  /* Jira Premium Color Palette */
+  --jira-blue: #0052cc;
+  --jira-blue-hover: #0065ff;
+  --jira-blue-active: #0747a6;
+  --jira-dark-bg: #0d1117;
+  --jira-card-bg: #161a22;
+  --jira-border: #30363d;
+  --jira-text: #c9d1d9;
+  --jira-text-muted: #8b949e;
+  --jira-danger: #de350b;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+      to bottom,
+      transparent,
+      rgb(var(--background-end-rgb))
+    )
+    rgb(var(--background-start-rgb));
+  min-height: 100vh;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  overflow-x: hidden;
+}
+
+/* Custom modern scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #09090b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1e1e24;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--jira-blue);
+}
+
+/* Advanced Animation Keyframes */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes glowPulse {
+  0%, 100% { box-shadow: 0 0 5px rgba(0, 82, 204, 0.2); }
+  50% { box-shadow: 0 0 20px rgba(0, 82, 204, 0.4); }
+}
+
+@keyframes floatAmbient {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(2%, 2%) scale(1.05); }
+  66% { transform: translate(-1%, 3%) scale(0.95); }
+}
+
+@keyframes scanLine {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 3s infinite linear;
+}
+
+.ambient-matrix-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at 50% 50%, rgba(0, 82, 204, 0.03) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.ambient-matrix-bg::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M54 48c2.209 0 4 1.791 4 4s-1.791 4-4 4-4-1.791-4-4 1.791-4 4-4zM6 48c2.209 0 4 1.791 4 4s-1.791 4-4 4-4-1.791-4-4 1.791-4 4-4zM30 24c2.209 0 4 1.791 4 4s-1.791 4-4 4-4-1.791-4-4 1.791-4 4-4zM6 0c2.209 0 4 1.791 4 4S8.209 8 6 8 2 6.209 2 4s1.791-4 4-4zM54 0c2.209 0 4 1.791 4 4s-1.791 4-4 4-4-1.791-4-4 1.791-4 4-4z' fill='%23ffffff' fill-opacity='0.02' fill-rule='evenodd'/%3E%3C/svg%3E");
+  animation: floatAmbient 20s infinite ease-in-out;
+}
+
+/* Smooth glassmorphic highlights */
+.glass-panel {
+  background: rgba(15, 15, 17, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-card {
+  background: rgba(15, 15, 17, 0.55);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card:hover {
+  border-color: rgba(0, 98, 255, 0.4);
+  box-shadow: 0 0 25px rgba(0, 98, 255, 0.15);
+  transform: translateY(-2px);
+}
+
+/* Ambient glow accent */
+.ambient-glow {
+  background: radial-gradient(circle at center, rgba(0, 98, 255, 0.15) 0%, rgba(124, 58, 237, 0.08) 50%, transparent 100%);
+  pointer-events: none;
+}
+
+/* JIRA Dark Theme Design System Buttons & Cards */
+.jira-btn-primary {
+  background-color: var(--jira-blue);
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 0.875rem;
+  padding: 0.625rem 1.25rem;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  position: relative;
+  overflow: hidden;
+}
+
+.jira-btn-primary::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+  transition: 0.5s;
+}
+
+.jira-btn-primary:hover::before {
+  left: 100%;
+}
+
+.jira-btn-primary:hover {
+  background-color: var(--jira-blue-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 82, 204, 0.4);
+}
+
+.jira-btn-primary:active {
+  transform: translateY(0);
+  background-color: var(--jira-blue-active);
+}
+
+.jira-btn-secondary {
+  background-color: rgba(255, 255, 255, 0.03);
+  color: #c9d1d9;
+  font-weight: 500;
+  font-size: 0.875rem;
+  padding: 0.625rem 1.25rem;
+  border-radius: 4px;
+  border: 1px solid var(--jira-border);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.jira-btn-secondary:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-color: #8b949e;
+  color: #ffffff;
+}
+
+.jira-btn-danger {
+  background-color: #de350b;
+  color: #ffffff;
+  font-weight: 500;
+  font-size: 0.875rem;
+  padding: 0.5rem 1rem;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.jira-btn-danger:hover {
+  background-color: #ff5630;
+  transform: translateY(-1px);
+  box-shadow: 0 0 12px rgba(222, 53, 11, 0.4);
+}
+
+.jira-card {
+  background-color: var(--jira-card-bg);
+  border: 1px solid var(--jira-border);
+  border-radius: 6px;
+  padding: 1.5rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(12px);
+}
+
+.jira-card:hover {
+  border-color: var(--jira-blue);
+  box-shadow: 0 12px 32px rgba(0, 82, 204, 0.15);
+  transform: translateY(-4px);
+}
+
+.jira-input {
+  background-color: var(--jira-dark-bg);
+  border: 1px solid var(--jira-border);
+  color: var(--jira-text);
+  border-radius: 4px;
+  padding: 0.875rem 1.125rem;
+  font-size: 0.875rem;
+  transition: all 0.3s ease;
+  outline: none;
+  width: 100%;
+}
+
+.jira-input:focus {
+  border-color: var(--jira-blue);
+  box-shadow: 0 0 0 3px rgba(0, 82, 204, 0.15);
+  background-color: #010409;
+  transform: scale(1.01);
+}
+
+/* JIRA Kanban Column */
+.jira-kanban-col {
+  background-color: #0d1117;
+  border: 1px solid #21262d;
+  border-radius: 6px;
+  padding: 1rem;
+  min-height: 400px;
+}
+
+/* Animated scan matrix overlay */
+@keyframes gridSweep {
+  0% { transform: translateY(0); }
+  50% { transform: translateY(180px); }
+  100% { transform: translateY(0); }
+}
+
