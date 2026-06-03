@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Sidebar from '@/components/Sidebar';
+import Footer from '@/components/Footer';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { collection, query, orderBy, onSnapshot, where } from 'firebase/firestore';
@@ -273,6 +274,7 @@ export default function LiveProctoringDashboard() {
             </div>
          )}
       </AnimatePresence>
+      <Footer className="ml-64" />
     </div>
   );
 }

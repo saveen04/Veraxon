@@ -1,81 +1,105 @@
-import { NextResponse } from 'next/server';
-import dbConnect from '@/lib/db';
-import User from '@/models/User';
-import Exam from '@/models/Exam';
-import Attempt from '@/models/Attempt';
-import ViolationReport from '@/models/ViolationReport';
+import { NextResponse } from "next/server";
+import { getAdminFirestore } from "@/lib/firebase-admin";
+
+export const dynamic = "force-dynamic";
 
 export async function GET(req) {
   try {
-    await dbConnect();
-    
+    const db = getAdminFirestore();
+
     // Get partitioning params from search query
     const { searchParams } = new URL(req.url);
-    const department = searchParams.get('department');
-    const collegeName = searchParams.get('collegeName');
-
-    const filter = {};
-    if (department) filter.department = department;
-    if (collegeName) filter.collegeName = collegeName;
-
-    const userFilter = { role: 'student', ...filter };
-    const examFilter = { ...filter };
+    const department = searchParams.get("department");
+    const collegeName = searchParams.get("collegeName");
 
     // 1. Fetch available exams within partition
-    const exams = await Exam.find(examFilter).sort({ createdAt: -1 });
+    let examsRef = db.collection("exams");
+    if (collegeName)
+      examsRef = examsRef.where("collegeName", "==", collegeName);
+    if (department) examsRef = examsRef.where("department", "==", department);
+    const examSnapshot = await examsRef.get();
+    const exams = examSnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
 
     // 2. Counts within partition
-    const candidatesCount = await User.countDocuments(userFilter);
-    const examsCount = await Exam.countDocuments(examFilter);
-    
+    let usersRef = db.collection("users").where("role", "==", "student");
+    if (collegeName)
+      usersRef = usersRef.where("collegeName", "==", collegeName);
+    if (department) usersRef = usersRef.where("department", "==", department);
+    const candidatesSnapshot = await usersRef.get();
+    const candidatesCount = candidatesSnapshot.size;
+    const examsCount = exams.length;
+
     // For attempts, we filter by exams within the partition
-    const examIds = exams.map(e => e._id);
-    const attemptsCount = await Attempt.countDocuments({ examId: { $in: examIds } });
+    const examIds = exams.map((e) => e.id);
+    let attemptsSnapshot;
+    if (examIds.length > 0) {
+      // Chunk of 10 limit for Firestore 'in' query
+      attemptsSnapshot = await db
+        .collection("attempts")
+        .where("examId", "in", examIds.slice(0, 10))
+        .get();
+    } else {
+      attemptsSnapshot = { docs: [], size: 0 };
+    }
+    const attemptsCount = attemptsSnapshot.size;
+    const allAttempts = attemptsSnapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
 
     // 3. Fetch recent activity (Violation Reports) filtered by examIds
-    const violations = await ViolationReport.find({ examId: { $in: examIds } })
-      .sort({ timestamp: -1 })
-      .limit(15);
-
-    const activityFeed = [];
-    for (let violation of violations) {
-      const studentObj = await User.findById(violation.studentId).select('name email');
-      const examObj = await Exam.findById(violation.examId).select('title');
-      
-      activityFeed.push({
-        _id: violation._id,
-        studentName: studentObj ? studentObj.name : 'Unknown Candidate',
-        examTitle: examObj ? examObj.title : 'Assessment Session',
-        type: violation.type,
-        timestamp: violation.timestamp,
-        evidence: violation.evidence ? 'Snapshot Available' : 'Metadata Logs'
-      });
+    let infractionsSnapshot;
+    if (examIds.length > 0) {
+      infractionsSnapshot = await db
+        .collection("infractions")
+        .where("examId", "in", examIds.slice(0, 10))
+        .get();
+    } else {
+      infractionsSnapshot = { docs: [] };
     }
 
+    const sortedInfractions = infractionsSnapshot.docs
+      .map((doc) => ({ id: doc.id, ...doc.data() }))
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    const activityFeed = sortedInfractions.slice(0, 15).map((inf) => ({
+      _id: inf.id,
+      studentName: inf.studentName || "Unknown Student",
+      examTitle:
+        exams.find((e) => e.id === inf.examId)?.title || "Assessment Session",
+      type: inf.type,
+      timestamp: inf.timestamp,
+      evidence: inf.evidence ? "Snapshot Available" : "Metadata Logs",
+    }));
+
     // 4. Fetch attempts list for Kanban Board within partition
-    const allAttempts = await Attempt.find({ examId: { $in: examIds } }).sort({ startTime: -1 });
     const attemptsList = [];
     for (let attempt of allAttempts) {
-      const studentObj = await User.findById(attempt.studentId).select('name email');
-      const examObj = await Exam.findById(attempt.examId).select('title');
-      const violationCount = await ViolationReport.countDocuments({ studentId: attempt.studentId, examId: attempt.examId });
-      
+      const matchingExam = exams.find((e) => e.id === attempt.examId);
+      const studentInfractionsCount = sortedInfractions.filter(
+        (inf) =>
+          inf.studentId === attempt.studentId && inf.examId === attempt.examId,
+      ).length;
+
       attemptsList.push({
-        _id: attempt._id,
+        _id: attempt.id,
         studentId: attempt.studentId,
-        studentName: studentObj ? studentObj.name : 'Unknown Candidate',
-        studentEmail: studentObj ? studentObj.email : '',
+        studentName: attempt.studentName || "Unknown Candidate",
+        studentEmail: attempt.studentEmail || "",
         examId: attempt.examId,
-        examTitle: examObj ? examObj.title : 'Assessment Session',
+        examTitle: matchingExam ? matchingExam.title : "Assessment Session",
         status: attempt.status,
         startTime: attempt.startTime,
-        violationCount,
+        violationCount: studentInfractionsCount,
       });
     }
 
     let integrityScore = 98;
     if (attemptsCount > 0) {
-      const totalViolationsCount = await ViolationReport.countDocuments({ examId: { $in: examIds } });
+      const totalViolationsCount = sortedInfractions.length;
       const deductions = totalViolationsCount * 2;
       integrityScore = Math.max(70, 100 - deductions);
     }
@@ -88,13 +112,16 @@ export async function GET(req) {
       attemptsCount,
       integrityScore,
       recentActivity: activityFeed,
-      attempts: attemptsList
+      attempts: attemptsList,
     });
   } catch (error) {
-    console.error('Stats Retrieval API Error:', error);
-    return NextResponse.json({ 
-      success: false, 
-      error: 'Failed to retrieve system statistics' 
-    }, { status: 500 });
+    console.error("Stats Retrieval API Error:", error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Failed to retrieve system statistics",
+      },
+      { status: 500 },
+    );
   }
 }

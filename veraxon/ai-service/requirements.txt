@@ -1,0 +1,34 @@
+# Veraxon AI Proctoring Service — Python dependencies
+# Install: pip install -r requirements.txt
+
+# ── Web framework ────────────────────────────────────────────────
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+pydantic==2.7.1
+
+# ── Computer vision ──────────────────────────────────────────────
+opencv-python-headless==4.9.0.80
+mediapipe==0.10.14
+numpy==1.26.4
+
+# ── Object detection (YOLOv8 / upgrade path to v11) ─────────────
+ultralytics==8.2.27
+
+# ── ML classifier ────────────────────────────────────────────────
+scikit-learn==1.4.2
+
+# ── Audio / voice (optional — VAD) ───────────────────────────────
+# torch and torchaudio needed for Silero VAD
+# Uncomment when GPU/audio pipeline is enabled:
+# torch==2.3.0
+# torchaudio==2.3.0
+# silero-vad  (loaded via torch.hub — no pip package needed)
+
+# ── Identity verification (optional) ────────────────────────────
+# deepface==0.0.92     # uncomment when identity verification is enabled
+
+# ── Speaker diarization (optional) ──────────────────────────────
+# pyannote.audio==3.1.1  # requires HuggingFace token
+
+# ── Testing ──────────────────────────────────────────────────────
+pytest==8.2.1

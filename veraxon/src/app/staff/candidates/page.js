@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
+import Footer from '@/components/Footer';
 import { motion } from 'framer-motion';
 import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -12,7 +13,8 @@ import {
   Search, 
   Mail,
   CheckCircle2,
-  AlertCircle 
+  AlertCircle,
+  GraduationCap
 } from 'lucide-react';
 
 export default function CandidatesPage() {
@@ -117,7 +119,7 @@ export default function CandidatesPage() {
              <div className="h-px flex-1 bg-gradient-to-r from-white/10 to-transparent" />
            </h1>
            <p className="text-[9px] font-black text-[#0052cc] uppercase tracking-[0.4em] mt-2">
-             {userData.collegeName} • {userData.department}
+              {userData?.collegeName || 'Institution'} • {userData?.department || 'Department'}
            </p>
         </motion.div>
 
@@ -139,7 +141,7 @@ export default function CandidatesPage() {
            <div className="px-10 py-8 border-b border-white/5 flex items-center justify-between bg-white/[0.01]">
              <div>
                <h3 className="text-[11px] font-black uppercase tracking-[0.4em] text-white/40 mb-1">Identity Matrix</h3>
-               <p className="text-[9px] font-bold text-white/10 uppercase tracking-widest">Active Verification Directory • {userData.department}</p>
+               <p className="text-[9px] font-bold text-white/10 uppercase tracking-widest">Active Verification Directory • {userData?.department || 'Department'}</p>
              </div>
              <div className="flex items-center gap-3">
                <span className="px-4 py-1.5 rounded-full bg-[#0052cc]/10 border border-[#0052cc]/20 text-[9px] font-black text-[#0052cc] uppercase">1,248 Verified Units</span>
@@ -153,9 +155,10 @@ export default function CandidatesPage() {
                  Decrypting Registry...
                </div>
              ) : filteredCandidates.length === 0 ? (
-               <div className="p-32 text-center text-white/10 text-[11px] uppercase tracking-[0.5em] font-black italic">
-                 No Institutional Matches Found.
-               </div>
+                <div className="p-32 text-center text-white/10 text-[11px] uppercase tracking-[0.5em] font-black italic flex flex-col items-center gap-4">
+                  <GraduationCap className="w-10 h-10 text-white/5" />
+                  No students enrolled in {userData?.department || 'this department'} yet.
+                </div>
              ) : (
                <table className="w-full text-left border-collapse">
                  <thead>
@@ -229,6 +232,7 @@ export default function CandidatesPage() {
            </div>
         </div>
       </main>
+      <Footer className="ml-64" />
     </div>
   );
 }

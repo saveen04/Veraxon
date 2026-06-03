@@ -7,6 +7,7 @@ import { auth, db } from '@/lib/firebase';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { useAuth } from '@/context/AuthContext';
+import { VeraxonLogo } from '@/lib/brand';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -123,11 +124,7 @@ export default function RegisterPage() {
         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-black/60 z-0" />
 
         <div className="relative z-10 text-center px-12">
-          <img
-            src="/logov-removebg-preview.png"
-            alt="Veraxon"
-            className="h-32 mb-10 mx-auto drop-shadow-[0_0_50px_rgba(0,82,204,0.6)] transform hover:scale-105 transition-transform duration-1000"
-          />
+          <VeraxonLogo size="XL" className="mb-10 mx-auto drop-shadow-[0_0_50px_rgba(0,82,204,0.6)] hover:scale-105 transition-transform duration-1000" />
           <h1 className="text-8xl font-extrabold tracking-[-0.05em] text-white uppercase italic mb-4 leading-none">
             Veraxon<span className="text-[#0052cc]">.</span>
           </h1>
@@ -158,11 +155,7 @@ export default function RegisterPage() {
         <div className="w-full max-w-lg relative z-10 py-12 m-auto">
           {/* Header Mobile Only */}
           <div className="lg:hidden flex flex-col items-center mb-12 text-center">
-            <img
-              src="/logov-removebg-preview.png"
-              alt="Veraxon"
-              className="h-20 w-auto drop-shadow-[0_0_20px_rgba(0,82,204,0.4)]"
-            />
+            <VeraxonLogo size="LG" className="drop-shadow-[0_0_20px_rgba(0,82,204,0.4)]" />
             <h2 className="text-3xl font-black tracking-tighter text-white uppercase italic mt-4">Veraxon</h2>
           </div>
 
@@ -300,7 +293,7 @@ export default function RegisterPage() {
         {/* Standardized Footer */}
         <footer className="mt-auto py-8 w-full text-center">
           <div className="flex flex-col items-center gap-2 opacity-30">
-            <img src="/logov-removebg-preview.png" alt="Veraxon" className="h-6 grayscale" />
+            <VeraxonLogo size="XS" className="grayscale" />
             <p className="text-[8px] font-black uppercase tracking-[0.4em] text-white">Veraxon Assessment Platform</p>
             <p className="text-[7px] font-bold text-white/50 uppercase tracking-widest">© 2026 v4.0.1 • All Rights Reserved</p>
           </div>

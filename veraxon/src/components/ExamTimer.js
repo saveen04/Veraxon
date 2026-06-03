@@ -1,51 +1,47 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 
 /**
- * High accuracy countdown timer component for exams
- * @param {number} initialMinutes - Total duration of the exam in minutes
- * @param {function} onTimeUp - Callback triggered when timer hits 0:00
+ * ExamTimer – sticky countdown with visual urgency states.
+ * @param {number} initialMinutes – exam duration in minutes
+ * @param {function} onTimeUp – called when timer hits zero
  */
 export default function ExamTimer({ initialMinutes, onTimeUp }) {
-  const [secondsRemaining, setSecondsRemaining] = useState(initialMinutes * 60);
+  const [secondsLeft, setSecondsLeft] = useState((initialMinutes ?? 60) * 60);
+  const onTimeUpRef = useRef(onTimeUp);
+  onTimeUpRef.current = onTimeUp;
 
   useEffect(() => {
-    if (secondsRemaining <= 0) {
-      onTimeUp();
+    if (secondsLeft <= 0) {
+      onTimeUpRef.current?.();
       return;
     }
+    const id = setInterval(() => setSecondsLeft(s => s - 1), 1000);
+    return () => clearInterval(id);
+  }, [secondsLeft]);
 
-    const interval = setInterval(() => {
-      setSecondsRemaining((prev) => prev - 1);
-    }, 1000);
+  const mins = Math.floor(secondsLeft / 60);
+  const secs = secondsLeft % 60;
+  const formatted = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 
-    return () => clearInterval(interval);
-  }, [secondsRemaining, onTimeUp]);
+  const pct = secondsLeft / ((initialMinutes ?? 60) * 60);
+  const urgent   = secondsLeft < 120;   // < 2 min
+  const warning  = secondsLeft < 300;   // < 5 min
 
-  const formatTime = () => {
-    const mins = Math.floor(secondsRemaining / 60);
-    const secs = secondsRemaining % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const isLowTime = secondsRemaining < 120; // less than 2 minutes
+  const color = urgent ? 'text-red-400' : warning ? 'text-amber-400' : 'text-emerald-400';
+  const ring  = urgent ? 'border-red-500/40 bg-red-500/5' : warning ? 'border-amber-500/30 bg-amber-500/5' : 'border-white/10 bg-white/[0.03]';
+  const dot   = urgent ? 'bg-red-400' : warning ? 'bg-amber-400' : 'bg-emerald-400';
 
   return (
-    <div className={`px-4 py-2 rounded-lg border font-mono font-bold text-sm transition-all duration-300 flex items-center gap-2 ${
-      isLowTime
-        ? 'bg-red-500/10 border-red-500/30 text-red-500 animate-pulse'
-        : 'bg-white/[0.03] border-white/10 text-white'
-    }`}>
-      <span className="flex h-2 w-2 relative">
-        <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-          isLowTime ? 'bg-red-500' : 'bg-accentBlue'
-        }`}></span>
-        <span className={`relative inline-flex rounded-full h-2 w-2 ${
-          isLowTime ? 'bg-red-500' : 'bg-accentBlue'
-        }`}></span>
-      </span>
-      <span>🕒 REMAINING: {formatTime()}</span>
+    <div className={`flex items-center gap-2.5 px-4 py-2 rounded-xl border font-mono transition-all duration-500 ${ring}`}>
+      <span className={`w-2 h-2 rounded-full shrink-0 animate-pulse ${dot}`} />
+      <span className={`text-sm font-black tracking-widest ${color} tabular-nums`}>{formatted}</span>
+      {urgent && (
+        <span className="text-[9px] font-black text-red-400 uppercase tracking-widest animate-pulse">
+          LOW
+        </span>
+      )}
     </div>
   );
 }

@@ -1,130 +1,188 @@
-'use client';
+"use client";
+import React, { useEffect, useState } from "react";
+import { useAuth } from "@/context/AuthContext";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import Sidebar from "@/components/Sidebar";
+import Footer from "@/components/Footer";
+import NotificationDropdown from "@/components/NotificationDropdown";
+import { db } from "@/lib/firebase";
+import { collection, query, where, getDocs, onSnapshot } from "firebase/firestore";
+import { motion } from "framer-motion";
+import {
+  Play, ShieldCheck, History, Zap, Trophy, Activity,
+  ClipboardList, RefreshCw, CheckCircle2, Clock, ChevronRight, Layers
+} from "lucide-react";
 
-import React from 'react';
-import { useAuth } from '@/context/AuthContext';
-import { useRouter } from 'next/navigation';
-import Sidebar from '@/components/Sidebar';
-import NotificationDropdown from '@/components/NotificationDropdown';
-import { 
-  Search, 
-  Play, 
-  ShieldCheck, 
-  History, 
-  Zap, 
-  Trophy,
-  Activity
-} from 'lucide-react';
+function SkeletonCard() {
+  return <div className="jira-premium-card !p-6 animate-pulse"><div className="h-4 bg-white/[0.05] rounded w-1/2 mb-3" /><div className="h-7 bg-white/[0.07] rounded w-1/3" /></div>;
+}
 
 export default function StudentDashboard() {
   const { user, userData, loading } = useAuth();
   const router = useRouter();
+  const [stats, setStats] = useState({ assigned: 0, completed: 0, retakes: 0, integrity: 98 });
+  const [recentTests, setRecentTests] = useState([]);
+  const [dataLoading, setDataLoading] = useState(true);
 
-  if (loading) return (
-    <div className="min-h-screen bg-black flex items-center justify-center font-inter">
-      <div className="ambient-matrix-bg" />
-      <div className="w-8 h-8 border-4 border-[#0052cc]/20 border-t-[#0052cc] rounded-full animate-spin" />
-    </div>
-  );
+  useEffect(() => {
+    if (loading) return;
+    if (!user) { router.push("/login"); return; }
+    // Wait for userData before making role-based decisions
+    if (!userData) return;
+    if (userData.role !== "student" && userData.role !== "admin") { router.push("/staff/dashboard"); return; }
+    if (!userData.profileCompleted && !(userData.collegeName && userData.department)) { router.push("/onboarding"); return; }
+  }, [loading, user, userData, router]);
 
-  if (!user) {
-    router.push('/login');
-    return null;
-  }
+  useEffect(() => {
+    if (!user) return;
+    const loadData = async () => {
+      try {
+        // Assigned assessments
+        const assignQ = query(collection(db, "assignments"), where("assignedTo", "array-contains", user.uid), where("status", "==", "active"));
+        const assignSnap = await getDocs(assignQ);
+        const allAssigned = assignSnap.docs.map(d => d.data());
+        const regular = allAssigned.filter(a => !a.isRetake);
+        const retakes = allAssigned.filter(a => a.isRetake);
+
+        // Completed submissions
+        const subQ = query(collection(db, "submissions"), where("userId", "==", user.uid));
+        const subSnap = await getDocs(subQ);
+        const subs = subSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const completed = subs.filter(s => s.status === "completed" || s.status === "disqualified");
+
+        // Recent published tests
+        const pubQ = query(collection(db, "tests"), where("status", "==", "published"));
+        const pubSnap = await getDocs(pubQ);
+        const pub = pubSnap.docs.map(d => ({ id: d.id, ...d.data() })).slice(0, 4);
+
+        setStats({ assigned: regular.length, completed: completed.length, retakes: retakes.length, integrity: 98 });
+        setRecentTests(pub);
+      } catch (e) { console.error(e); }
+      finally { setDataLoading(false); }
+    };
+    loadData();
+  }, [user]);
+
+  // Still resolving auth — don't render or redirect yet
+  if (loading || (user && !userData)) return null;
+
+  // Auth resolved but no session — go to login
+  if (!user) return null; // redirect handled in useEffect
+
+  // Wrong role — redirect handled in useEffect
+  if (userData && userData.role !== "student" && userData.role !== "admin") return null;
+
+  const statItems = [
+    { label: "Assigned", value: stats.assigned, icon: <ClipboardList size={18} />, color: "text-[#0052cc]", bg: "bg-[#0052cc]/10", href: "/student/assessments" },
+    { label: "Completed", value: stats.completed, icon: <CheckCircle2 size={18} />, color: "text-emerald-400", bg: "bg-emerald-400/10", href: "/student/history" },
+    { label: "Retakes", value: stats.retakes, icon: <RefreshCw size={18} />, color: "text-amber-400", bg: "bg-amber-400/10", href: "/student/retakes" },
+    { label: "Integrity", value: `${stats.integrity}%`, icon: <ShieldCheck size={18} />, color: "text-violet-400", bg: "bg-violet-400/10", href: "/student/stats" },
+  ];
 
   return (
-    <div className="min-h-screen bg-black flex font-inter">
-      <div className="ambient-matrix-bg" />
-      
-      {/* Premium Jira Sidebar */}
-      <Sidebar role="student" />
-
-      {/* Main Content Area */}
-      <main className="flex-1 ml-64 p-8 overflow-y-auto">
-        {/* Top Header */}
-        <header className="flex items-center justify-between mb-12">
-          <div className="flex-1 max-w-xl">
-             {/* Dynamic Overview Title */}
-             <h2 className="text-[10px] font-black uppercase text-white/40 tracking-[0.4em]">Overview</h2>
-          </div>
-
-          <div className="flex items-center gap-6">
-            <button className="jira-btn-primary !py-2.5 !px-6 flex items-center gap-2 text-[10px] hover:shadow-[0_0_20px_rgba(0,82,204,0.4)]">
-              <Play className="w-3.5 h-3.5 fill-current" />
-              <span>Join Session</span>
-            </button>
-             <div className="flex items-center gap-4 text-white/30">
-               <button className="p-2 hover:text-white transition-colors">
-                  <Activity className="w-5 h-5" />
-               </button>
-               <NotificationDropdown />
+    <div className="min-h-screen bg-black flex flex-col font-inter text-white">
+      <div className="ambient-matrix-bg opacity-20" />
+      <div className="flex flex-1">
+        <Sidebar role="student" />
+        <main className="flex-1 ml-64 p-10 overflow-y-auto">
+          {/* Header */}
+          <header className="flex items-center justify-between mb-8 border-b border-white/[0.06] pb-6">
+            <div>
+              <div className="flex items-center gap-2 mb-1.5">
+                <Activity size={10} className="text-[#0052cc]" />
+                <span className="text-[9px] font-black text-[#0052cc] uppercase tracking-[0.3em]">Terminal Online</span>
+              </div>
+              <h1 className="text-3xl font-black uppercase italic tracking-tighter text-white">
+                Welcome, {userData?.username?.split(" ")[0] || "Candidate"}
+              </h1>
+              <p className="text-[10px] text-white/35 uppercase tracking-widest mt-1.5 font-medium">{userData?.collegeName} · {userData?.department}</p>
             </div>
+            <div className="flex items-center gap-4">
+              <Link href="/student/assessments" className="jira-btn-primary !py-2.5 !px-5 flex items-center gap-2 text-[11px]">
+                <Play size={12} className="fill-current" /> Join Session
+              </Link>
+              <NotificationDropdown />
+            </div>
+          </header>
+
+          {/* Stats */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            {dataLoading ? [...Array(4)].map((_, i) => <SkeletonCard key={i} />) : statItems.map((s, i) => (
+              <motion.div key={s.label} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}>
+                <Link href={s.href} className="jira-premium-card !p-5 flex items-center gap-4 hover:scale-[1.02] transition-transform block">
+                  <div className={`p-2.5 rounded-xl ${s.bg} ${s.color} shrink-0`}>{s.icon}</div>
+                  <div>
+                    <p className="text-[9px] font-black text-white/30 uppercase tracking-widest">{s.label}</p>
+                    <p className={`text-2xl font-black italic ${s.color}`}>{s.value}</p>
+                  </div>
+                </Link>
+              </motion.div>
+            ))}
           </div>
-        </header>
 
-        {/* Page Title & Breadcrumb */}
-        <div className="mb-12">
-           <div className="flex items-center gap-2 mb-3">
-              <Activity className="w-3 h-3 text-[#0052cc]" />
-              <span className="text-[8px] font-black text-[#0052cc] uppercase tracking-[0.3em]">Terminal Online</span>
-           </div>
-           <h1 className="text-5xl font-black tracking-tighter uppercase italic text-white flex items-center gap-4">
-             Overview
-           </h1>
-           <p className="text-[9px] font-black text-white/20 uppercase tracking-[0.4em] mt-2">Institutional Assessment & Integrity Terminal</p>
-        </div>
+          {/* Available assessments */}
+          <section className="mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-[10px] font-black uppercase tracking-widest text-white/40 flex items-center gap-2">
+                <Layers size={12} /> Available Assessments
+              </h2>
+              <Link href="/student/assessments" className="text-[9px] font-black text-[#0052cc] hover:underline uppercase tracking-widest flex items-center gap-1">
+                View All <ChevronRight size={11} />
+              </Link>
+            </div>
+            {dataLoading ? (
+              <div className="space-y-3">{[...Array(3)].map((_, i) => <div key={i} className="h-16 bg-white/[0.02] rounded-xl animate-pulse" />)}</div>
+            ) : recentTests.length === 0 ? (
+              <div className="py-12 text-center border border-dashed border-white/5 rounded-2xl">
+                <ClipboardList size={32} className="text-white/10 mx-auto mb-3" />
+                <p className="text-[11px] text-white/20 uppercase tracking-widest">No assessments available yet.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {recentTests.map((test, i) => (
+                  <motion.div key={test.id} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.06 }}
+                    className="glass-card !p-4 rounded-xl border border-white/5 flex items-center justify-between gap-4 hover:border-[#0052cc]/30 transition-all">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-xl bg-[#0052cc]/10 flex items-center justify-center shrink-0"><Layers size={14} className="text-[#0052cc]" /></div>
+                      <div className="min-w-0">
+                        <p className="font-black text-sm text-white truncate">{test.title}</p>
+                        <p className="text-[9px] text-white/30 flex items-center gap-2 mt-0.5">
+                          <Clock size={8} /> {test.duration} min · {test.questions?.length || 0} Questions
+                        </p>
+                      </div>
+                    </div>
+                    <Link href={`/env-check?examId=${test.id}`} className="jira-btn-primary !py-2 !px-4 text-[9px] flex items-center gap-1.5 shrink-0">
+                      <Play size={10} className="fill-current" /> Start
+                    </Link>
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </section>
 
-        {/* Dashboard Metrics Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
-           <StudentStatCard label="Total Attempts" value="0" icon={<History className="text-[#0052cc]" />} />
-           <StudentStatCard label="Integrity" value="98%" icon={<ShieldCheck className="text-emerald-500" />} />
-           <StudentStatCard label="Tier" value="Lvl 1" icon={<Zap className="text-purple-500" />} />
-           <StudentStatCard label="Rank" value="Top 5%" icon={<Trophy className="text-amber-500" />} />
-        </div>
-
-        {/* Large Central Action Card */}
-        <section className="mt-12">
-           <div className="jira-card !p-20 flex flex-col items-center justify-center text-center relative overflow-hidden group">
-              {/* Background Glow */}
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-[#0052cc]/10 rounded-full blur-[100px] pointer-events-none group-hover:scale-125 transition-transform duration-1000" />
-              
-              <Zap className="w-16 h-16 text-amber-500 mb-8 animate-pulse" />
-              
-              <h3 className="text-4xl font-black text-white uppercase italic tracking-tighter mb-4">Integrity Guard Active</h3>
-              <p className="text-sm text-white/40 font-bold max-w-lg leading-relaxed mb-12 uppercase tracking-widest">
-                Your neural integrity is being tracked across all assessment sessions. A consistent high score builds your professional reputation.
-              </p>
-              
-              <button className="jira-btn-primary !py-5 !px-12 text-[11px] hover:scale-105">
-                Join New Session
-              </button>
-           </div>
-        </section>
-
-        {/* Footer Branding */}
-        <footer className="mt-auto py-16 flex flex-col items-center gap-5 relative z-10">
-          <div className="w-20 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent mb-4" />
-          <img 
-            src="/logov-removebg-preview.png" 
-            alt="Veraxon Registry" 
-            className="h-10 opacity-20 hover:opacity-100 transition-opacity duration-700 cursor-default grayscale"
-          />
-          <p className="text-[8px] font-black text-white/5 uppercase tracking-[0.6em] mt-2">Verified Candidate Terminal</p>
-        </footer>
-      </main>
-    </div>
-  );
-}
-
-function StudentStatCard({ label, value, icon }) {
-  return (
-    <div className="jira-card !p-8 flex items-center gap-8 group">
-      <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/5 transition-transform group-hover:scale-110">
-        {React.cloneElement(icon, { className: 'w-6 h-6' })}
+          {/* Quick links */}
+          <section className="grid grid-cols-2 gap-4">
+            <Link href="/student/retakes" className="jira-premium-card !p-5 flex items-center gap-4 hover:border-amber-400/30 transition-all group">
+              <div className="p-3 rounded-xl bg-amber-400/10 text-amber-400 group-hover:scale-110 transition-transform"><RefreshCw size={18} /></div>
+              <div>
+                <p className="font-black text-sm text-white">Retake Assessments</p>
+                <p className="text-[9px] text-white/30 uppercase tracking-widest mt-0.5">{stats.retakes} pending</p>
+              </div>
+              <ChevronRight size={14} className="text-white/20 ml-auto" />
+            </Link>
+            <Link href="/student/history" className="jira-premium-card !p-5 flex items-center gap-4 hover:border-emerald-400/30 transition-all group">
+              <div className="p-3 rounded-xl bg-emerald-400/10 text-emerald-400 group-hover:scale-110 transition-transform"><History size={18} /></div>
+              <div>
+                <p className="font-black text-sm text-white">Exam History</p>
+                <p className="text-[9px] text-white/30 uppercase tracking-widest mt-0.5">{stats.completed} completed</p>
+              </div>
+              <ChevronRight size={14} className="text-white/20 ml-auto" />
+            </Link>
+          </section>
+        </main>
       </div>
-      <div>
-        <div className="text-[9px] font-black text-white/20 uppercase tracking-[0.2em] mb-1">{label}</div>
-        <div className="text-2xl font-black text-white italic">{value}</div>
-      </div>
+      <Footer className="ml-64" />
     </div>
   );
 }

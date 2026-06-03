@@ -1,38 +1,49 @@
-import { NextResponse } from 'next/server';
-import dbConnect from '@/lib/db';
-import Exam from '@/models/Exam';
+import { NextResponse } from "next/server";
+import { getAdminFirestore } from "@/lib/firebase-admin";
 
 export async function GET(req, { params }) {
   try {
-    await dbConnect();
     const { id } = params;
 
     if (!id) {
       return NextResponse.json(
-        { error: 'Exam ID is required' },
-        { status: 400 }
+        { error: "Exam ID is required" },
+        { status: 400 },
       );
     }
 
-    // Query exam, projecting out the correctAnswer fields for security
-    const exam = await Exam.findById(id).select('title duration questions.text questions.options questions.marks createdBy');
-    
-    if (!exam) {
-      return NextResponse.json(
-        { error: 'Exam not found' },
-        { status: 404 }
-      );
+    const db = getAdminFirestore();
+    const examDoc = await db.collection("exams").doc(id).get();
+
+    if (!examDoc.exists) {
+      return NextResponse.json({ error: "Exam not found" }, { status: 404 });
     }
+
+    const examData = examDoc.data();
+
+    // Sanitize questions to protect correct answers and solutions from being inspected in the client
+    const sanitizedQuestions = (examData.questions || []).map((q) => {
+      const { correctAnswer, solution, correct, ...rest } = q;
+      return rest;
+    });
+
+    const exam = {
+      id: examDoc.id,
+      title: examData.title,
+      duration: examData.duration,
+      questions: sanitizedQuestions,
+      createdBy: examData.createdBy,
+    };
 
     return NextResponse.json({
       success: true,
-      exam
+      exam,
     });
   } catch (error) {
-    console.error('Fetch Exam API Error:', error);
+    console.error("Fetch Exam API Error:", error);
     return NextResponse.json(
-      { error: 'Internal server error during exam retrieval' },
-      { status: 500 }
+      { error: "Internal server error during exam retrieval" },
+      { status: 500 },
     );
   }
 }

@@ -1,39 +1,56 @@
-import { NextResponse } from 'next/server';
-import dbConnect from '@/lib/db';
-import Attempt from '@/models/Attempt';
+import { NextResponse } from "next/server";
+import { getAdminFirestore } from "@/lib/firebase-admin";
 
 export async function POST(req) {
   try {
-    await dbConnect();
     const { examId, studentId, answers } = await req.json();
 
     if (!examId || !studentId || !answers) {
       return NextResponse.json(
-        { error: 'Please provide examId, studentId, and answers array' },
-        { status: 400 }
+        { error: "Please provide examId, studentId, and answers array" },
+        { status: 400 },
       );
     }
 
-    // Find if attempt already exists, otherwise create it (upsert progress)
-    const attempt = await Attempt.findOneAndUpdate(
-      { examId, studentId, status: 'started' },
-      { 
-        answers, 
-        startTime: new Date() // Updates or preserves start details
-      },
-      { new: true, upsert: true }
-    );
+    const db = getAdminFirestore();
+    const attemptsRef = db.collection("attempts");
+    const querySnapshot = await attemptsRef
+      .where("examId", "==", examId)
+      .where("studentId", "==", studentId)
+      .where("status", "==", "started")
+      .limit(1)
+      .get();
+
+    let attemptId;
+    if (querySnapshot.empty) {
+      const docRef = await attemptsRef.add({
+        examId,
+        studentId,
+        answers,
+        status: "started",
+        startTime: new Date().toISOString(),
+        lastUpdated: new Date().toISOString(),
+      });
+      attemptId = docRef.id;
+    } else {
+      const docRef = querySnapshot.docs[0].ref;
+      await docRef.update({
+        answers,
+        lastUpdated: new Date().toISOString(),
+      });
+      attemptId = docRef.id;
+    }
 
     return NextResponse.json({
       success: true,
-      message: 'Assessment progress saved successfully',
-      attemptId: attempt._id
+      message: "Assessment progress saved successfully",
+      attemptId,
     });
   } catch (error) {
-    console.error('Save Progress Route Error:', error);
+    console.error("Save Progress Route Error:", error);
     return NextResponse.json(
-      { error: 'Internal server error during progress saving' },
-      { status: 500 }
+      { error: "Internal server error during progress saving" },
+      { status: 500 },
     );
   }
 }

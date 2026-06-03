@@ -2,90 +2,107 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─────────────────────────────────────────────────────────────── */
+/* Design tokens                                                    */
+/* ─────────────────────────────────────────────────────────────── */
 :root {
-  --foreground-rgb: 237, 237, 237;
-  --background-start-rgb: 3, 3, 3;
-  --background-end-rgb: 5, 5, 5;
-  
-  /* Jira Premium Color Palette */
-  --jira-blue: #0052cc;
-  --jira-blue-hover: #0065ff;
+  --jira-blue:        #0052cc;
+  --jira-blue-hover:  #0065ff;
   --jira-blue-active: #0747a6;
-  --jira-dark-bg: #0d1117;
-  --jira-card-bg: #161a22;
-  --jira-border: #30363d;
-  --jira-text: #c9d1d9;
-  --jira-text-muted: #8b949e;
-  --jira-danger: #de350b;
+  --jira-dark-bg:     #0d1117;
+  --jira-card-bg:     #10121a;
+  --jira-border:      #21262d;
+  --jira-text:        #c9d1d9;
+  --jira-text-muted:  #8b949e;
+  --jira-danger:      #de350b;
+  --sidebar-w:        16rem;   /* w-64 */
 }
 
+/* ─────────────────────────────────────────────────────────────── */
+/* Base                                                             */
+/* ─────────────────────────────────────────────────────────────── */
 body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
+  color: #e0e0e0;
+  background: #030303;
   min-height: 100vh;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   overflow-x: hidden;
 }
 
-/* Custom modern scrollbars */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
+/* ─────────────────────────────────────────────────────────────── */
+/* Scrollbars                                                       */
+/* ─────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar        { width: 5px; height: 5px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: rgba(255,255,255,.08); border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--jira-blue); }
 
-::-webkit-scrollbar-track {
-  background: #09090b;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #1e1e24;
-  border-radius: 9999px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--jira-blue);
-}
-
-/* Advanced Animation Keyframes */
+/* ─────────────────────────────────────────────────────────────── */
+/* Keyframes                                                        */
+/* ─────────────────────────────────────────────────────────────── */
 @keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
 }
 
-@keyframes glowPulse {
-  0%, 100% { box-shadow: 0 0 5px rgba(0, 82, 204, 0.2); }
-  50% { box-shadow: 0 0 20px rgba(0, 82, 204, 0.4); }
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-16px); }
+  to   { opacity: 1; transform: translateX(0);     }
 }
 
 @keyframes floatAmbient {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  33% { transform: translate(2%, 2%) scale(1.05); }
-  66% { transform: translate(-1%, 3%) scale(0.95); }
+  0%,100% { transform: translate(0,0) scale(1); }
+  33%     { transform: translate(2%,2%) scale(1.05); }
+  66%     { transform: translate(-1%,3%) scale(.95); }
 }
 
-@keyframes scanLine {
-  0% { transform: translateY(-100%); }
-  100% { transform: translateY(100vh); }
+@keyframes orbFloatOne {
+  0%,100% { transform: translate(0,0) scale(1); }
+  33%     { transform: translate(10vw,5vh) scale(1.1); }
+  66%     { transform: translate(-5vw,15vh) scale(.9); }
 }
 
+@keyframes orbFloatTwo {
+  0%,100% { transform: translate(0,0) scale(1); }
+  40%     { transform: translate(-8vw,-10vh) scale(.95); }
+  75%     { transform: translate(5vw,5vh) scale(1.05); }
+}
+
+@keyframes orbFloatThree {
+  0%,100% { transform: translate(0,0) scale(1); }
+  50%     { transform: translate(12vw,-8vh) scale(1.15); }
+}
+
+/* ─────────────────────────────────────────────────────────────── */
+/* Animation helpers                                                */
+/* ─────────────────────────────────────────────────────────────── */
 .animate-shimmer {
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.05), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.05), transparent);
   background-size: 200% 100%;
-  animation: shimmer 3s infinite linear;
+  animation: shimmer 2s infinite linear;
 }
 
+.animate-fade-in-up  { animation: fadeInUp    .35s ease both; }
+.animate-fade-in     { animation: fadeIn      .25s ease both; }
+.animate-slide-in-left { animation: slideInLeft .3s ease both; }
+
+/* ─────────────────────────────────────────────────────────────── */
+/* Ambient background                                               */
+/* ─────────────────────────────────────────────────────────────── */
 .ambient-matrix-bg {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: radial-gradient(circle at 50% 50%, rgba(0, 82, 204, 0.03) 0%, transparent 70%);
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, rgba(0,82,204,.03) 0%, transparent 70%);
   pointer-events: none;
   z-index: -1;
 }
@@ -93,76 +110,171 @@ body {
 .ambient-matrix-bg::after {
   content: '';
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  inset: 0;
   background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M54 48c2.209 0 4 1.791 4 4s-1.791 4-4 4-4-1.791-4-4 1.791-4 4-4zM6 48c2.209 0 4 1.791 4 4s-1.791 4-4 4-4-1.791-4-4 1.791-4 4-4zM30 24c2.209 0 4 1.791 4 4s-1.791 4-4 4-4-1.791-4-4 1.791-4 4-4zM6 0c2.209 0 4 1.791 4 4S8.209 8 6 8 2 6.209 2 4s1.791-4 4-4zM54 0c2.209 0 4 1.791 4 4s-1.791 4-4 4-4-1.791-4-4 1.791-4 4-4z' fill='%23ffffff' fill-opacity='0.02' fill-rule='evenodd'/%3E%3C/svg%3E");
   animation: floatAmbient 20s infinite ease-in-out;
 }
 
-/* Smooth glassmorphic highlights */
-.glass-panel {
-  background: rgba(15, 15, 17, 0.7);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.glass-card {
-  background: rgba(15, 15, 17, 0.55);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.glass-card:hover {
-  border-color: rgba(0, 98, 255, 0.4);
-  box-shadow: 0 0 25px rgba(0, 98, 255, 0.15);
-  transform: translateY(-2px);
-}
-
-/* Ambient glow accent */
-.ambient-glow {
-  background: radial-gradient(circle at center, rgba(0, 98, 255, 0.15) 0%, rgba(124, 58, 237, 0.08) 50%, transparent 100%);
+/* ─────────────────────────────────────────────────────────────── */
+/* Floating orbs                                                    */
+/* ─────────────────────────────────────────────────────────────── */
+.floating-orbs-container {
+  position: fixed;
+  inset: 0;
   pointer-events: none;
-}
-
-/* JIRA Dark Theme Design System Buttons & Cards */
-.jira-btn-primary {
-  background-color: var(--jira-blue);
-  color: #ffffff;
-  font-weight: 600;
-  font-size: 0.875rem;
-  padding: 0.625rem 1.25rem;
-  border-radius: 4px;
-  border: 1px solid transparent;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  position: relative;
+  z-index: -2;
   overflow: hidden;
 }
 
-.jira-btn-primary::before {
-  content: '';
+.floating-orb {
   position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
-  transition: 0.5s;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: .07;
+  mix-blend-mode: screen;
 }
 
-.jira-btn-primary:hover::before {
-  left: 100%;
+.floating-orb-1 {
+  width: 500px; height: 500px;
+  background: radial-gradient(circle, #0052cc 0%, transparent 80%);
+  top: 10%; left: 5%;
+  animation: orbFloatOne 25s infinite ease-in-out;
+}
+
+.floating-orb-2 {
+  width: 600px; height: 600px;
+  background: radial-gradient(circle, #7c3aed 0%, transparent 80%);
+  bottom: 10%; right: 5%;
+  animation: orbFloatTwo 30s infinite ease-in-out;
+}
+
+.floating-orb-3 {
+  width: 400px; height: 400px;
+  background: radial-gradient(circle, #06b6d4 0%, transparent 80%);
+  top: 40%; left: 45%;
+  animation: orbFloatThree 20s infinite ease-in-out;
+}
+
+/* ─────────────────────────────────────────────────────────────── */
+/* Glass helpers                                                    */
+/* ─────────────────────────────────────────────────────────────── */
+.glass-panel {
+  background: rgba(12,12,15,.72);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255,255,255,.07);
+}
+
+.glass-card {
+  background: rgba(12,12,15,.55);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,.05);
+  transition: all .25s cubic-bezier(.4,0,.2,1);
+}
+
+.glass-card:hover {
+  border-color: rgba(0,98,255,.35);
+  box-shadow: 0 0 22px rgba(0,98,255,.12);
+  transform: translateY(-2px);
+}
+
+/* ─────────────────────────────────────────────────────────────── */
+/* Premium card                                                     */
+/* ─────────────────────────────────────────────────────────────── */
+.jira-premium-card {
+  position: relative;
+  background: rgba(14,16,22,.58);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,.055);
+  border-radius: 14px;
+  padding: 1.5rem;
+  transition: all .28s cubic-bezier(.16,1,.3,1);
+  box-shadow: 0 4px 24px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.04);
+}
+
+.jira-premium-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 14px;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(255,255,255,.07) 0%, transparent 45%, rgba(0,82,204,.07) 100%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  transition: background .28s ease;
+}
+
+.jira-premium-card:hover {
+  transform: translateY(-4px) scale(1.004);
+  border-color: rgba(0,82,204,.22);
+  box-shadow:
+    0 14px 36px rgba(0,82,204,.11),
+    0 0 0 1px rgba(0,82,204,.13),
+    inset 0 1px 0 rgba(255,255,255,.06);
+}
+
+.jira-premium-card:hover::before {
+  background: linear-gradient(135deg, rgba(0,82,204,.32) 0%, rgba(124,58,237,.18) 100%);
+}
+
+/* ─────────────────────────────────────────────────────────────── */
+/* Jira card (simpler variant)                                      */
+/* ─────────────────────────────────────────────────────────────── */
+.jira-card {
+  background: var(--jira-card-bg);
+  border: 1px solid var(--jira-border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  transition: all .22s cubic-bezier(.4,0,.2,1);
+  backdrop-filter: blur(12px);
+}
+
+.jira-card:hover {
+  border-color: rgba(0,82,204,.38);
+  box-shadow: 0 8px 24px rgba(0,82,204,.12);
+  transform: translateY(-3px);
+}
+
+/* ─────────────────────────────────────────────────────────────── */
+/* Buttons                                                          */
+/* ─────────────────────────────────────────────────────────────── */
+.jira-btn-primary {
+  background-color: var(--jira-blue);
+  color: #fff;
+  font-weight: 700;
+  font-size: .8125rem;
+  padding: .6rem 1.25rem;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  transition: all .22s cubic-bezier(.4,0,.2,1);
+  box-shadow: 0 1px 4px rgba(0,0,0,.35);
+  text-transform: uppercase;
+  letter-spacing: .09em;
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  white-space: nowrap;
+}
+
+.jira-btn-primary::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255,255,255,.12) 0%, transparent 60%);
+  pointer-events: none;
+  border-radius: inherit;
 }
 
 .jira-btn-primary:hover {
   background-color: var(--jira-blue-hover);
   transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(0, 82, 204, 0.4);
+  box-shadow: 0 8px 22px rgba(0,82,204,.38), 0 0 0 1px rgba(0,82,204,.28);
 }
 
 .jira-btn-primary:active {
@@ -170,87 +282,141 @@ body {
   background-color: var(--jira-blue-active);
 }
 
+.jira-btn-primary:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
 .jira-btn-secondary {
-  background-color: rgba(255, 255, 255, 0.03);
-  color: #c9d1d9;
-  font-weight: 500;
-  font-size: 0.875rem;
-  padding: 0.625rem 1.25rem;
-  border-radius: 4px;
+  background-color: rgba(255,255,255,.03);
+  color: var(--jira-text);
+  font-weight: 600;
+  font-size: .8125rem;
+  padding: .6rem 1.25rem;
+  border-radius: 10px;
   border: 1px solid var(--jira-border);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all .2s cubic-bezier(.4,0,.2,1);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  text-transform: uppercase;
+  letter-spacing: .09em;
+  white-space: nowrap;
 }
 
 .jira-btn-secondary:hover {
-  background-color: rgba(255, 255, 255, 0.08);
-  border-color: #8b949e;
-  color: #ffffff;
+  background-color: rgba(255,255,255,.07);
+  border-color: rgba(255,255,255,.18);
+  color: #fff;
 }
 
 .jira-btn-danger {
-  background-color: #de350b;
-  color: #ffffff;
-  font-weight: 500;
-  font-size: 0.875rem;
-  padding: 0.5rem 1rem;
-  border-radius: 3px;
+  background-color: var(--jira-danger);
+  color: #fff;
+  font-weight: 700;
+  font-size: .8125rem;
+  padding: .6rem 1.25rem;
+  border-radius: 10px;
   border: 1px solid transparent;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all .2s cubic-bezier(.4,0,.2,1);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  text-transform: uppercase;
+  letter-spacing: .09em;
+  white-space: nowrap;
 }
 
 .jira-btn-danger:hover {
   background-color: #ff5630;
   transform: translateY(-1px);
-  box-shadow: 0 0 12px rgba(222, 53, 11, 0.4);
+  box-shadow: 0 6px 16px rgba(222,53,11,.38);
 }
 
-.jira-card {
-  background-color: var(--jira-card-bg);
-  border: 1px solid var(--jira-border);
-  border-radius: 6px;
-  padding: 1.5rem;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  backdrop-filter: blur(12px);
-}
-
-.jira-card:hover {
-  border-color: var(--jira-blue);
-  box-shadow: 0 12px 32px rgba(0, 82, 204, 0.15);
-  transform: translateY(-4px);
-}
-
+/* ─────────────────────────────────────────────────────────────── */
+/* Input                                                            */
+/* ─────────────────────────────────────────────────────────────── */
 .jira-input {
-  background-color: var(--jira-dark-bg);
-  border: 1px solid var(--jira-border);
+  background-color: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.09);
   color: var(--jira-text);
-  border-radius: 4px;
-  padding: 0.875rem 1.125rem;
-  font-size: 0.875rem;
-  transition: all 0.3s ease;
+  border-radius: 10px;
+  padding: .75rem 1rem;
+  font-size: .875rem;
+  transition: all .2s ease;
   outline: none;
   width: 100%;
 }
 
+.jira-input:hover:not(:focus) {
+  border-color: rgba(255,255,255,.14);
+  background-color: rgba(255,255,255,.04);
+}
+
 .jira-input:focus {
-  border-color: var(--jira-blue);
-  box-shadow: 0 0 0 3px rgba(0, 82, 204, 0.15);
-  background-color: #010409;
-  transform: scale(1.01);
+  border-color: rgba(0,82,204,.55);
+  box-shadow: 0 0 0 3px rgba(0,82,204,.12);
+  background-color: rgba(255,255,255,.04);
 }
 
-/* JIRA Kanban Column */
-.jira-kanban-col {
-  background-color: #0d1117;
-  border: 1px solid #21262d;
-  border-radius: 6px;
-  padding: 1rem;
-  min-height: 400px;
+/* ─────────────────────────────────────────────────────────────── */
+/* Skeleton loader                                                  */
+/* ─────────────────────────────────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,.04) 25%,
+    rgba(255,255,255,.08) 50%,
+    rgba(255,255,255,.04) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s infinite linear;
+  border-radius: 8px;
 }
 
-/* Animated scan matrix overlay */
-@keyframes gridSweep {
-  0% { transform: translateY(0); }
-  50% { transform: translateY(180px); }
-  100% { transform: translateY(0); }
+/* ─────────────────────────────────────────────────────────────── */
+/* Sidebar link glow (legacy — kept for backward compat)            */
+/* ─────────────────────────────────────────────────────────────── */
+.jira-sidebar-link-glow {
+  position: relative;
+  transition: all .28s cubic-bezier(.16,1,.3,1);
 }
 
+.jira-sidebar-link-glow:hover {
+  background: rgba(255,255,255,.03);
+  color: #fff;
+}
+
+.jira-sidebar-link-glow::after {
+  content: "";
+  position: absolute;
+  left: 0; top: 50%;
+  transform: translateY(-50%) scaleY(0);
+  width: 3px; height: 40%;
+  background: var(--jira-blue);
+  border-radius: 0 4px 4px 0;
+  transition: transform .28s cubic-bezier(.16,1,.3,1);
+  box-shadow: 0 0 10px rgba(0,82,204,.8);
+}
+
+.jira-sidebar-link-glow:hover::after { transform: translateY(-50%) scaleY(1); }
+
+/* ─────────────────────────────────────────────────────────────── */
+/* Typography utilities                                             */
+/* ─────────────────────────────────────────────────────────────── */
+.page-title   { @apply text-3xl font-black uppercase italic tracking-tighter text-white; }
+.section-label{ @apply text-[10px] font-black uppercase tracking-[0.28em] text-white/35; }
+.metric-value { @apply text-3xl font-black italic tracking-tight; }
+
+/* ─────────────────────────────────────────────────────────────── */
+/* Custom scrollbar utility class                                   */
+/* ─────────────────────────────────────────────────────────────── */
+.custom-scrollbar::-webkit-scrollbar       { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,.07); border-radius: 9999px; }

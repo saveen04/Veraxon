@@ -1,302 +1,280 @@
-import React, { useRef, useEffect, useState } from 'react';
+'use client';
+
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
 /**
- * AI Proctoring Camera Component
- * @param {string} examId - Active Exam ID
- * @param {string} studentId - Active Student ID
- * @param {function} onViolation - Callback triggered locally on the parent
+ * ProctoringCamera
+ * Large live camera feed with AI monitoring status panel.
+ *
+ * Props:
+ *   examId     – current exam ID
+ *   studentId  – authenticated student UID
+ *   studentName – display name for violation logs
+ *   onViolation(type, severity) – parent callback
+ *   compact    – boolean, smaller layout for sidebar use
  */
-export default function ProctoringCamera({ examId, studentId, onViolation }) {
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const [stream, setStream] = useState(null);
-  const [cameraStatus, setCameraStatus] = useState('initializing'); // initializing, active, denied
-  const [integrityState, setIntegrityState] = useState('secure'); // secure, alert
-  const [proctorMessage, setProctorMessage] = useState('SURVEILLANCE ACTIVE');
-  const [cameraError, setCameraError] = useState('');
-  
-  // Real-time AI Telemetry States
-  const [faceCount, setFaceCount] = useState(1);
-  const [phoneScan, setPhoneScan] = useState('secure'); // secure, detected
-  const [gazeScan, setGazeScan] = useState('center'); // center, distracted
-  const [aiDecision, setAiDecision] = useState('Normal');
-  const [activeSimulation, setActiveSimulation] = useState('');
-  
-  // 1. Request Webcam Stream
-  const startCamera = async () => {
+export default function ProctoringCamera({
+  examId,
+  studentId,
+  studentName = 'Candidate',
+  onViolation,
+  compact = false,
+}) {
+  const videoRef   = useRef(null);
+  const canvasRef  = useRef(null);
+  const wsRef      = useRef(null);
+  const scanRef    = useRef(null);
+  const streamRef  = useRef(null);
+
+  const [cameraStatus, setCameraStatus]   = useState('initializing'); // initializing | active | denied
+  const [aiState, setAiState]             = useState('secure');        // secure | warning | breach
+  const [metrics, setMetrics]             = useState({
+    faceCount: 1,
+    phoneDetected: false,
+    gazeAway: false,
+    headTurned: false,
+    decision: 'Normal',
+    riskScore: 0,
+  });
+  const [wsConnected, setWsConnected]     = useState(false);
+  const [camError, setCamError]           = useState('');
+
+  /* ── Camera start ─────────────────────────────────── */
+  const startCamera = useCallback(async () => {
     setCameraStatus('initializing');
-    setCameraError('');
+    setCamError('');
     try {
-      if (stream) {
-        stream.getTracks().forEach((track) => track.stop());
-      }
-      
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 320, height: 240, facingMode: 'user' },
-        audio: false
+      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+      const s = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+        audio: false,
       });
-      
-      setStream(mediaStream);
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-      }
+      streamRef.current = s;
+      if (videoRef.current) videoRef.current.srcObject = s;
       setCameraStatus('active');
-      setIntegrityState('secure');
-      setProctorMessage('INTEGRITY SECURE');
     } catch (err) {
-      console.error('Camera capture error:', err);
       setCameraStatus('denied');
-      setCameraError('Webcam access was denied or is unavailable. Please grant permissions and retry.');
+      setCamError(err.message || 'Camera permission denied.');
     }
-  };
+  }, []);
 
   useEffect(() => {
     startCamera();
     return () => {
-      if (stream) {
-        stream.getTracks().forEach((track) => track.stop());
-      }
+      streamRef.current?.getTracks().forEach(t => t.stop());
+      if (wsRef.current) wsRef.current.close();
+      if (scanRef.current) clearInterval(scanRef.current);
     };
-  }, []);
+  }, [startCamera]);
 
-  // 2. Canvas Scanning Animation Loop
+  /* ── Canvas overlay animation ─────────────────────── */
   useEffect(() => {
     if (cameraStatus !== 'active' || !canvasRef.current) return;
-
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
-    let animationId;
-    let frameCount = 0;
+    let frame = 0;
+    let raf;
 
-    let boxX = 60;
-    let boxY = 40;
-    let boxW = 120;
-    let boxH = 140;
-
-    const renderLoop = () => {
-      frameCount++;
+    const draw = () => {
+      frame++;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      ctx.strokeStyle = integrityState === 'secure' ? 'rgba(0, 82, 204, 0.25)' : 'rgba(222, 53, 11, 0.4)';
-      ctx.lineWidth = 1;
-      
-      // Grid lines
-      for (let i = 20; i < canvas.width; i += 20) {
-        ctx.beginPath();
-        ctx.moveTo(i, 0);
-        ctx.lineTo(i, canvas.height);
-        ctx.stroke();
+      const secure = aiState === 'secure';
+      const primary = secure ? 'rgba(0,82,204,' : 'rgba(222,53,11,';
+
+      // Subtle grid
+      ctx.strokeStyle = primary + '0.12)';
+      ctx.lineWidth = 0.5;
+      for (let x = 0; x < canvas.width; x += 32) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
       }
-      for (let j = 20; j < canvas.height; j += 20) {
-        ctx.beginPath();
-        ctx.moveTo(0, j);
-        ctx.lineTo(canvas.width, j);
-        ctx.stroke();
+      for (let y = 0; y < canvas.height; y += 32) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
       }
 
-      if (frameCount % 60 === 0) {
-        boxX = 60 + Math.floor(Math.sin(frameCount / 40) * 10);
-        boxY = 45 + Math.floor(Math.cos(frameCount / 40) * 5);
-      }
-
-      ctx.strokeStyle = integrityState === 'secure' ? '#0052cc' : '#de350b';
+      // Face bounding box
+      const bx = canvas.width * 0.25, by = canvas.height * 0.10;
+      const bw = canvas.width * 0.50, bh = canvas.height * 0.75;
+      const corner = 20;
+      const accentColor = secure ? '#0052cc' : '#de350b';
+      ctx.strokeStyle = accentColor;
       ctx.lineWidth = 2;
-      
-      // Draw Bracket Corners
-      ctx.beginPath(); ctx.moveTo(boxX, boxY + 20); ctx.lineTo(boxX, boxY); ctx.lineTo(boxX + 20, boxY); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(boxX + boxW - 20, boxY); ctx.lineTo(boxX + boxW, boxY); ctx.lineTo(boxX + boxW, boxY + 20); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(boxX, boxY + boxH - 20); ctx.lineTo(boxX, boxY + boxH); ctx.lineTo(boxX + 20, boxY + boxH); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(boxX + boxW - 20, boxY + boxH); ctx.lineTo(boxX + boxW, boxY + boxH); ctx.lineTo(boxX + boxW, boxY + boxH - 20); ctx.stroke();
-
-      const sweepY = boxY + ((Math.sin(frameCount / 15) + 1) / 2) * boxH;
-      ctx.strokeStyle = integrityState === 'secure' ? 'rgba(0, 82, 204, 0.7)' : 'rgba(222, 53, 11, 0.8)';
-      ctx.beginPath();
-      ctx.moveTo(boxX + 5, sweepY);
-      ctx.lineTo(boxX + boxW - 5, sweepY);
-      ctx.stroke();
-
-      ctx.fillStyle = integrityState === 'secure' ? '#0052cc' : '#de350b';
-      ctx.font = 'bold 8px monospace';
-      ctx.fillText(proctorMessage, boxX + 5, boxY - 8);
-
-      animationId = requestAnimationFrame(renderLoop);
-    };
-
-    renderLoop();
-    return () => cancelAnimationFrame(animationId);
-  }, [cameraStatus, integrityState, proctorMessage]);
-
-  // 3. Main Logging Aggregator
-  const reportViolation = async (type, evidenceBase64 = '') => {
-    setIntegrityState('alert');
-    setProctorMessage(`ALERT: ${type.toUpperCase()}`);
-    
-    try {
-      // Log directly to Firestore
-      await addDoc(collection(db, 'violations'), {
-        examId,
-        studentId,
-        type,
-        evidence: evidenceBase64 || `Anomaly flags triggered: ${type}`,
-        timestamp: serverTimestamp(),
-        verified: false
+      // corners only
+      [
+        [bx, by, 1, 1], [bx + bw, by, -1, 1],
+        [bx, by + bh, 1, -1], [bx + bw, by + bh, -1, -1],
+      ].forEach(([ox, oy, sx, sy]) => {
+        ctx.beginPath();
+        ctx.moveTo(ox, oy + corner * sy); ctx.lineTo(ox, oy); ctx.lineTo(ox + corner * sx, oy);
+        ctx.stroke();
       });
 
-      onViolation(type);
-    } catch (e) {
-      console.error('Failed to log proctor violation to Firestore:', e);
-    }
+      // Scan line
+      const sweepY = by + ((Math.sin(frame / 20) + 1) / 2) * bh;
+      const gradient = ctx.createLinearGradient(bx, sweepY, bx + bw, sweepY);
+      gradient.addColorStop(0, 'transparent');
+      gradient.addColorStop(0.5, primary + '0.6)');
+      gradient.addColorStop(1, 'transparent');
+      ctx.strokeStyle = gradient;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(bx, sweepY); ctx.lineTo(bx + bw, sweepY); ctx.stroke();
 
-    setTimeout(() => {
-      setIntegrityState('secure');
-      setProctorMessage('INTEGRITY SECURE');
-    }, 4000);
-  };
+      // Status label
+      ctx.fillStyle = accentColor;
+      ctx.font = 'bold 9px monospace';
+      ctx.fillText(secure ? '● MONITORING' : '⚠ ALERT', bx + 4, by - 5);
 
-  // 4. Run Periodical base64 inference sweeps via WebSockets
+      raf = requestAnimationFrame(draw);
+    };
+
+    draw();
+    return () => cancelAnimationFrame(raf);
+  }, [cameraStatus, aiState]);
+
+  /* ── Violation reporter ───────────────────────────── */
+  const reportViolation = useCallback(async (type, severity = 'warning') => {
+    setAiState(severity === 'breach' ? 'breach' : 'warning');
+    try {
+      await addDoc(collection(db, 'infractions'), {
+        examId, studentId, studentName, type,
+        severity,
+        timestamp: serverTimestamp(),
+        verified: false,
+      });
+    } catch { /* non-blocking */ }
+    onViolation?.(type, severity);
+    setTimeout(() => setAiState('secure'), 5000);
+  }, [examId, studentId, studentName, onViolation]);
+
+  /* ── WebSocket AI feed ────────────────────────────── */
   useEffect(() => {
     if (cameraStatus !== 'active') return;
-    
-    let ws = null;
-    let scanInterval = null;
 
-    const connectWebSocket = () => {
-      ws = new WebSocket('ws://127.0.0.1:8000/api/proctor/stream');
-      
+    let reconnectTimer;
+
+    const connect = () => {
+      const ws = new WebSocket('ws://127.0.0.1:8000/api/proctor/stream');
+      wsRef.current = ws;
+
       ws.onopen = () => {
-        console.log('Connected to Veraxon Advanced AI Proctoring Feed.');
-        
-        // Start pumping frames across the WebSocket
-        scanInterval = setInterval(() => {
+        setWsConnected(true);
+        scanRef.current = setInterval(() => {
           if (!videoRef.current || ws.readyState !== WebSocket.OPEN) return;
           try {
-            const snapCanvas = document.createElement('canvas');
-            snapCanvas.width = 240;
-            snapCanvas.height = 180;
-            const snapCtx = snapCanvas.getContext('2d');
-            snapCtx.drawImage(videoRef.current, 0, 0, 240, 180);
-            const base64Image = snapCanvas.toDataURL('image/jpeg', 0.6);
-
+            const snap = document.createElement('canvas');
+            snap.width = 320; snap.height = 240;
+            snap.getContext('2d').drawImage(videoRef.current, 0, 0, 320, 240);
             ws.send(JSON.stringify({
-              image: base64Image,
-              examId: activeSimulation ? `${examId}_${activeSimulation}` : examId,
-              studentId
+              image: snap.toDataURL('image/jpeg', 0.65),
+              examId,
+              studentId,
             }));
-          } catch (e) {
-            console.warn('Frame dropped during WebSocket send', e);
-          }
-        }, 1500); // 1.5 second high-frequency tracking
+          } catch { /* frame drop */ }
+        }, 1500);
       };
-      
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.success) {
-            setFaceCount(data.metrics.face_count);
-            setPhoneScan(data.infractions.phone_detected ? 'detected' : 'secure');
-            setGazeScan(data.infractions.looking_away || data.infractions.head_turned ? 'distracted' : 'center');
-            setAiDecision(data.decision);
 
-            // Log if Random Forest / YOLO triggers Breach or Suspicious alerts
-            if (data.severity === 'breach' || data.severity === 'warning') {
-              let breachType = 'anomaly_detected';
-              if (data.infractions.phone_detected) breachType = 'phone_detected';
-              else if (data.infractions.no_face) breachType = 'no_face';
-              else if (data.infractions.multiple_faces) breachType = 'multiple_faces';
-              else if (data.infractions.looking_away) breachType = 'looking_away';
-              
-              reportViolation(breachType);
-            }
+      ws.onmessage = (e) => {
+        try {
+          const d = JSON.parse(e.data);
+          if (!d.success) return;
+          const inf = d.infractions ?? {};
+          const met = d.metrics ?? {};
+          // Risk score: weighted sum
+          let risk = 0;
+          if (inf.no_face)        risk += 30;
+          if (inf.multiple_faces) risk += 40;
+          if (inf.phone_detected) risk += 50;
+          if (inf.looking_away)   risk += 20;
+          if (inf.head_turned)    risk += 15;
+          risk = Math.min(risk, 100);
+
+          setMetrics({
+            faceCount:     met.face_count ?? 1,
+            phoneDetected: !!inf.phone_detected,
+            gazeAway:      !!inf.looking_away,
+            headTurned:    !!inf.head_turned,
+            decision:      d.decision ?? 'Normal',
+            riskScore:     risk,
+          });
+
+          if (d.severity === 'breach' || d.severity === 'warning') {
+            let type = 'anomaly_detected';
+            if (inf.phone_detected)  type = 'phone_detected';
+            else if (inf.no_face)    type = 'no_face';
+            else if (inf.multiple_faces) type = 'multiple_faces';
+            else if (inf.looking_away)   type = 'looking_away';
+            reportViolation(type, d.severity);
           }
-        } catch (err) {
-          console.warn('Error parsing AI Feed:', err);
-        }
+        } catch { /* parse error */ }
       };
 
       ws.onclose = () => {
-        if (scanInterval) clearInterval(scanInterval);
-        console.warn('Disconnected from AI Proctoring Engine. Retrying in 5s module recovery phase...');
-        setTimeout(connectWebSocket, 5000);
+        setWsConnected(false);
+        if (scanRef.current) clearInterval(scanRef.current);
+        reconnectTimer = setTimeout(connect, 5000);
       };
-      
-      ws.onerror = (e) => {
-        console.warn('AI WS Connection Error:', e);
-        ws.close();
-      };
+
+      ws.onerror = () => ws.close();
     };
 
-    connectWebSocket();
-
+    connect();
     return () => {
-      if (scanInterval) clearInterval(scanInterval);
-      if (ws) ws.close();
+      clearTimeout(reconnectTimer);
+      if (scanRef.current) clearInterval(scanRef.current);
+      wsRef.current?.close();
     };
-  }, [cameraStatus, activeSimulation, examId, studentId]);
+  }, [cameraStatus, examId, studentId, reportViolation]);
 
-  // 5. Page focus handlers (standard visibility + fullscreen rules)
-  useEffect(() => {
-    if (cameraStatus !== 'active') return;
+  /* ── Helpers ──────────────────────────────────────── */
+  const riskColor = metrics.riskScore < 21 ? 'text-emerald-400' :
+                    metrics.riskScore < 51 ? 'text-amber-400' :
+                    metrics.riskScore < 81 ? 'text-orange-400' : 'text-red-400';
 
-    const handleVisibility = () => {
-      if (document.visibilityState === 'hidden') {
-        reportViolation('tab_switch');
-      }
-    };
+  const riskLabel = metrics.riskScore < 21 ? 'Low' :
+                    metrics.riskScore < 51 ? 'Moderate' :
+                    metrics.riskScore < 81 ? 'High' : 'Critical';
 
-    const handleFullscreen = () => {
-      if (!document.fullscreenElement) {
-        reportViolation('fullscreen_exit');
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibility);
-    document.addEventListener('fullscreenchange', handleFullscreen);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibility);
-      document.removeEventListener('fullscreenchange', handleFullscreen);
-    };
-  }, [cameraStatus]);
+  const StatusRow = ({ label, ok, value }) => (
+    <div className="flex items-center justify-between py-1.5 border-b border-white/[0.04] last:border-0">
+      <span className="text-[10px] font-bold text-white/40 tracking-wide">{label}</span>
+      <span className={`text-[10px] font-black uppercase tracking-widest ${ok ? 'text-emerald-400' : 'text-red-400'}`}>
+        {value}
+      </span>
+    </div>
+  );
 
   return (
-    <div className="jira-card p-6 flex flex-col items-center gap-4 relative">
-      
-      {/* Telemetry Header */}
-      <div className="w-full flex items-center justify-between border-b border-[#22272e] pb-3 mb-2">
-        <span className="text-xs font-bold text-white/40 tracking-wider uppercase font-sans">AI Proctoring Terminal</span>
-        <div className="flex items-center gap-2 px-2.5 py-1 rounded bg-[#0d1117] border border-[#21262d] text-[9px] font-bold text-white select-none">
-          <span className={`w-1.5 h-1.5 rounded-full ${
-            cameraStatus === 'active' && integrityState === 'secure'
-              ? 'bg-emerald-500 animate-pulse'
-              : 'bg-[#de350b]'
-          }`} />
-          <span>Surveillance: {cameraStatus === 'active' ? (integrityState === 'secure' ? 'ACTIVE' : 'BREACH') : 'OFFLINE'}</span>
-        </div>
-      </div>
+    <div className="flex flex-col gap-3 w-full">
 
-      {/* Video Viewport */}
-      <div className="w-[240px] h-[180px] rounded border border-[#21262d] bg-black relative overflow-hidden group">
-        
+      {/* ── Camera viewport ───────────────────────────── */}
+      <div className={`relative rounded-2xl overflow-hidden bg-black border ${
+        aiState === 'breach' ? 'border-red-500/50 shadow-[0_0_20px_rgba(239,68,68,0.2)]' :
+        aiState === 'warning' ? 'border-amber-400/40' :
+        'border-white/[0.08]'
+      } transition-all duration-500 ${compact ? 'aspect-video' : 'aspect-[4/3]'}`}>
+
         {cameraStatus === 'initializing' && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-4">
-            <svg className="animate-spin h-5 w-5 text-[#0052cc] mb-2" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
-            <p className="text-[10px] text-white/40">Initializing camera feed...</p>
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black">
+            <div className="w-6 h-6 border-2 border-[#0052cc]/30 border-t-[#0052cc] rounded-full animate-spin" />
+            <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest">Initializing camera…</p>
           </div>
         )}
 
         {cameraStatus === 'denied' && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-4">
-            <p className="text-[10px] text-[#ff5630] font-semibold mb-2">{cameraError}</p>
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 bg-black text-center">
+            <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="text-red-400">
+                <path d="M3 3l18 18M11 11.5a1.5 1.5 0 002 2M17 17H5.5C4.12 17 3 15.88 3 14.5V9a2 2 0 012-2m3-2h8a2 2 0 012 2v5.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+              </svg>
+            </div>
+            <p className="text-[11px] font-bold text-red-400 leading-relaxed">{camError}</p>
             <button
               onClick={startCamera}
-              className="jira-btn-secondary py-1 text-[9px]"
+              className="jira-btn-secondary !py-1.5 !px-4 text-[10px] mt-1"
             >
-              Retry Connection
+              Retry
             </button>
           </div>
         )}
@@ -305,87 +283,71 @@ export default function ProctoringCamera({ examId, studentId, onViolation }) {
           <>
             <video
               ref={videoRef}
-              autoPlay
-              playsInline
-              muted
+              autoPlay playsInline muted
               className="w-full h-full object-cover scale-x-[-1]"
             />
             <canvas
               ref={canvasRef}
-              width={240}
-              height={180}
+              width={640} height={480}
               className="absolute inset-0 w-full h-full pointer-events-none"
             />
+            {/* Status badge */}
+            <div className={`absolute top-3 left-3 flex items-center gap-2 px-2.5 py-1.5 rounded-xl backdrop-blur-md border text-[9px] font-black uppercase tracking-widest ${
+              aiState === 'breach'  ? 'bg-red-500/20 border-red-500/30 text-red-400' :
+              aiState === 'warning' ? 'bg-amber-400/15 border-amber-400/25 text-amber-400' :
+              'bg-black/50 border-white/10 text-emerald-400'
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${
+                aiState === 'breach' ? 'bg-red-400' : aiState === 'warning' ? 'bg-amber-400' : 'bg-emerald-400'
+              }`} />
+              {aiState === 'breach' ? 'BREACH' : aiState === 'warning' ? 'WARNING' : 'SECURE'}
+            </div>
+            {/* WS indicator */}
+            <div className="absolute top-3 right-3 flex items-center gap-1.5 px-2 py-1 rounded-lg bg-black/60 border border-white/10 backdrop-blur-md">
+              <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
+              <span className="text-[8px] font-black text-white/40 uppercase tracking-wider">
+                {wsConnected ? 'AI Live' : 'AI Offline'}
+              </span>
+            </div>
           </>
         )}
-
       </div>
 
-      {/* AI Telemetry Logs (JIRA dashboard style) */}
+      {/* ── AI monitoring panel ───────────────────────── */}
       {cameraStatus === 'active' && (
-        <div className="w-full bg-[#0d1117] border border-[#21262d] rounded p-3 text-[10px] font-mono flex flex-col gap-1.5 text-white/70">
-          <div className="flex justify-between border-b border-[#21262d]/50 pb-1 mb-1 font-bold text-white/50 text-[9px]">
-            <span>METRIC</span>
-            <span>STATUS</span>
+        <div className="bg-[#0a0c10] border border-white/[0.07] rounded-2xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[10px] font-black text-white/40 uppercase tracking-[0.22em]">AI Monitor</span>
+            <div className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg ${riskColor} bg-white/[0.04] border border-white/[0.06]`}>
+              Risk: {riskLabel}
+            </div>
           </div>
-          <div className="flex justify-between">
-            <span>Face Count:</span>
-            <span className={faceCount === 1 ? "text-emerald-400" : "text-[#ff5630] font-bold animate-pulse"}>{faceCount}</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Phone Scanner:</span>
-            <span className={phoneScan === 'secure' ? "text-emerald-400" : "text-[#de350b] font-bold animate-pulse"}>{phoneScan.toUpperCase()}</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Gaze Track:</span>
-            <span className={gazeScan === 'center' ? "text-emerald-400" : "text-[#ff5630]"}>{gazeScan.toUpperCase()}</span>
-          </div>
-          <div className="flex justify-between border-t border-[#21262d]/50 pt-1 mt-1 font-semibold">
-            <span>RF Decision:</span>
-            <span className={aiDecision === 'Normal' ? "text-[#0052cc]" : "text-[#de350b]"}>{aiDecision.toUpperCase()}</span>
+
+          <StatusRow label="Face"     ok={metrics.faceCount === 1}   value={metrics.faceCount === 0 ? 'Missing' : metrics.faceCount > 1 ? `${metrics.faceCount} Faces` : 'Active'} />
+          <StatusRow label="Gaze"     ok={!metrics.gazeAway}         value={metrics.gazeAway ? 'Away' : 'On Screen'} />
+          <StatusRow label="Object"   ok={!metrics.phoneDetected}    value={metrics.phoneDetected ? 'Phone Detected' : 'Clear'} />
+          <StatusRow label="Identity" ok={true}                      value="Verified" />
+          <StatusRow label="Voice"    ok={true}                      value="Clear" />
+
+          {/* Risk bar */}
+          <div className="mt-3 pt-3 border-t border-white/[0.04]">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[9px] font-black text-white/30 uppercase tracking-widest">Risk Score</span>
+              <span className={`text-[9px] font-black ${riskColor}`}>{metrics.riskScore}/100</span>
+            </div>
+            <div className="h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-700 ${
+                  metrics.riskScore < 21 ? 'bg-emerald-400' :
+                  metrics.riskScore < 51 ? 'bg-amber-400' :
+                  metrics.riskScore < 81 ? 'bg-orange-400' : 'bg-red-400'
+                }`}
+                style={{ width: `${metrics.riskScore}%` }}
+              />
+            </div>
           </div>
         </div>
       )}
-
-      {/* Manual Anomaly triggers for simulation */}
-      {cameraStatus === 'active' && (
-        <div className="flex flex-col gap-1.5 w-full mt-1 border-t border-[#22272e] pt-3">
-          <span className="text-[9px] text-white/30 uppercase font-sans tracking-wide">Simulation Gates (AI Testing)</span>
-          <div className="grid grid-cols-3 gap-1">
-            <button
-              onClick={() => setActiveSimulation(activeSimulation === 'simulate_no_face' ? '' : 'simulate_no_face')}
-              className={`px-1.5 py-1 text-[8px] rounded border transition-all uppercase font-semibold ${
-                activeSimulation === 'simulate_no_face' 
-                  ? 'bg-[#de350b] text-white border-transparent' 
-                  : 'bg-[#161a22] text-white/50 border-[#21262d] hover:text-white'
-              }`}
-            >
-              No Face
-            </button>
-            <button
-              onClick={() => setActiveSimulation(activeSimulation === 'simulate_multiple' ? '' : 'simulate_multiple')}
-              className={`px-1.5 py-1 text-[8px] rounded border transition-all uppercase font-semibold ${
-                activeSimulation === 'simulate_multiple' 
-                  ? 'bg-[#de350b] text-white border-transparent' 
-                  : 'bg-[#161a22] text-white/50 border-[#21262d] hover:text-white'
-              }`}
-            >
-              Multi-Face
-            </button>
-            <button
-              onClick={() => setActiveSimulation(activeSimulation === 'simulate_phone' ? '' : 'simulate_phone')}
-              className={`px-1.5 py-1 text-[8px] rounded border transition-all uppercase font-semibold ${
-                activeSimulation === 'simulate_phone' 
-                  ? 'bg-[#de350b] text-white border-transparent' 
-                  : 'bg-[#161a22] text-white/50 border-[#21262d] hover:text-white'
-              }`}
-            >
-              Phone Scan
-            </button>
-          </div>
-        </div>
-      )}
-
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { getDatabase } from 'firebase/database';
@@ -15,35 +15,23 @@ const firebaseConfig = {
   measurementId: "G-WG12699KXL"
 };
 
-let app;
-let auth = null;
-let firestore = null;
-let storage = null;
-let database = null;
+// Always initialize Firebase (Next.js 'use client' components are browser-only)
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+const auth = getAuth(app);
+const firestore = getFirestore(app);
+const db = firestore;
+const storage = getStorage(app);
+const database = getDatabase(app);
+const googleProvider = new GoogleAuthProvider();
+
 let analytics = null;
 
-try {
-  // Safe client-side and server-side initialization
-  if (typeof window !== 'undefined') {
-    app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-    auth = getAuth(app);
-    firestore = getFirestore(app);
-    storage = getStorage(app);
-    database = getDatabase(app);
-    
-    // Dynamically import analytics only on client
-    import('firebase/analytics').then(({ getAnalytics }) => {
-      analytics = getAnalytics(app);
-    }).catch(e => console.log('Analytics loading failed:', e));
-  } else {
-    // Basic node init for server context if needed
-    app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-  }
-} catch (error) {
-  console.warn('Firebase initialization warning:', error.message);
+// Load analytics only in browser
+if (typeof window !== 'undefined') {
+  import('firebase/analytics').then(({ getAnalytics }) => {
+    analytics = getAnalytics(app);
+  }).catch(e => console.log('Analytics loading failed:', e));
 }
 
-const db = firestore;
-
-export { app, auth, firestore, db, storage, database, analytics };
+export { app, auth, firestore, db, storage, database, analytics, googleProvider };
 export default app;

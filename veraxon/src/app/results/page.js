@@ -22,7 +22,7 @@ export default function ResultsPage() {
     const fetchResult = async () => {
       try {
         setLoading(true);
-        const res = await fetch(`/api/result/get?studentId=${user.id}`);
+        const res = await fetch(`/api/result/get?studentId=${user.uid}`);
         const data = await res.json();
         
         if (data.success) {
@@ -146,7 +146,7 @@ export default function ResultsPage() {
 
         {/* 4. Action Button Return to Portal */}
         <Link
-          href="/dashboard"
+          href="/student/dashboard"
           className="block w-full py-4 rounded-xl bg-accentBlue text-white font-bold text-sm tracking-widest hover:bg-accentBlue/90 hover:shadow-lg hover:shadow-accentBlue/25 transition-all uppercase"
         >
           Return to Integrity Terminal

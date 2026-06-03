@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { Zap } from 'lucide-react';
 
 export default function VirtualAssistant() {
   const { userData } = useAuth();
@@ -55,7 +56,7 @@ export default function VirtualAssistant() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          history: currentHistory.filter(m => m.id !== 1), // Exclude purely local initial greeting if desired, or let the LLM see it
+          history: currentHistory.filter(m => m.id !== 1),
           userMessage: queryText,
           userData: {
              username: userData?.username,
@@ -64,21 +65,22 @@ export default function VirtualAssistant() {
         })
       });
 
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       
       const aiResponse = {
         id: Date.now() + 1,
         sender: 'ai',
-        text: data.success ? data.text : "API Protocol Error: Unable to reach Generative backend."
+        text: data.success ? data.text : (data.fallback ? data.text : "Unable to reach the AI backend. Please try again.")
       };
       
       setMessages(prev => [...prev, aiResponse]);
     } catch (err) {
-      console.error('LLM Fetch Error:', err);
+      console.error('V.E.R.A fetch error:', err);
       setMessages(prev => [...prev, {
         id: Date.now() + 1,
         sender: 'ai',
-        text: "Neural uplink severed. Failed to communicate with main server."
+        text: "Neural uplink temporarily unavailable. Please retry in a moment."
       }]);
     } finally {
       setIsTyping(false);

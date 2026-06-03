@@ -1,11 +1,12 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
-import { auth, db } from '@/lib/firebase';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { LogOut } from 'lucide-react';
+import React, { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { auth, db } from "@/lib/firebase";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { onAuthStateChanged, signOut } from "firebase/auth";
+import { LogOut, GraduationCap, BookOpen, User, Phone, Building2, Layers } from "lucide-react";
+import { VeraxonLogo, VeraxonFooter } from "@/lib/brand";
 
 const TN_COLLEGES = [
   "Anna University, Chennai",
@@ -72,7 +73,7 @@ const TN_COLLEGES = [
   "Muthayammal Engineering College",
   "Selvam College of Technology",
   "Gnanamani College of Technology",
-  "Vivekananda College of Engineering for Women"
+  "Vivekananda College of Engineering for Women",
 ];
 
 const DEPARTMENTS = [
@@ -92,25 +93,42 @@ const DEPARTMENTS = [
   "Chemical Engineering",
   "Food Technology",
   "Textile Technology",
-  "Fashion Technology"
+  "Fashion Technology",
 ];
+
+const STAFF_PROFESSIONS = [
+  "Professor",
+  "Associate Professor",
+  "Assistant Professor",
+  "Lecturer",
+  "Head of Department (HoD)",
+  "Dean",
+  "Lab Instructor",
+  "Technical Staff",
+  "Visiting Faculty",
+  "Research Scholar",
+];
+
+const ACADEMIC_YEARS = ["1st Year", "2nd Year", "3rd Year", "4th Year"];
 
 export default function OnboardingPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
   const [userRole, setUserRole] = useState(null);
   const [formData, setFormData] = useState({
-    username: '',
-    mobileNumber: '',
-    collegeName: '',
-    department: '',
-    registerNumber: '',
-    academicYear: '',
-    staffId: '',
-    designation: ''
+    username: "",
+    mobileNumber: "",
+    collegeName: "",
+    department: "",
+    // Student-specific
+    registerNumber: "",
+    academicYear: "",
+    // Staff-specific
+    staffId: "",
+    profession: "",
   });
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [showCollegeSuggestions, setShowCollegeSuggestions] = useState(false);
   const [showDeptSuggestions, setShowDeptSuggestions] = useState(false);
 
@@ -120,27 +138,39 @@ export default function OnboardingPage() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (!currentUser) {
-        router.push('/login');
+        router.push("/login");
         return;
       }
       setUser(currentUser);
 
-      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+      const userDoc = await getDoc(doc(db, "users", currentUser.uid));
       if (userDoc.exists()) {
         const userData = userDoc.data();
-        if (userData.profileCompleted) {
-          router.push(userData.role === 'staff' ? '/staff/dashboard' : '/student/dashboard');
+        if (
+          userData.profileCompleted ||
+          (userData.collegeName && userData.department)
+        ) {
+          if (!userData.profileCompleted) {
+            await updateDoc(doc(db, "users", currentUser.uid), {
+              profileCompleted: true,
+            });
+            document.cookie = `profileCompleted=true; path=/; max-age=3600; SameSite=Strict`;
+            document.cookie = `userRole=${userData.role}; path=/; max-age=3600; SameSite=Strict`;
+          }
+          router.push(
+            userData.role === "staff" ? "/staff/dashboard" : "/student/dashboard"
+          );
         } else {
           setUserRole(userData.role);
-          setFormData(prev => ({
+          setFormData((prev) => ({
             ...prev,
-            username: userData.username || currentUser.displayName || '',
-            collegeName: userData.collegeName || '',
-            department: userData.department || ''
+            username: userData.username || currentUser.displayName || "",
+            collegeName: userData.collegeName || "",
+            department: userData.department || "",
           }));
         }
       } else {
-        router.push('/login');
+        router.push("/login");
       }
     });
 
@@ -149,17 +179,19 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (collegeRef.current && !collegeRef.current.contains(event.target)) setShowCollegeSuggestions(false);
-      if (deptRef.current && !deptRef.current.contains(event.target)) setShowDeptSuggestions(false);
+      if (collegeRef.current && !collegeRef.current.contains(event.target))
+        setShowCollegeSuggestions(false);
+      if (deptRef.current && !deptRef.current.contains(event.target))
+        setShowDeptSuggestions(false);
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
-    if (e.target.name === 'collegeName') setShowCollegeSuggestions(true);
-    if (e.target.name === 'department') setShowDeptSuggestions(true);
+    if (e.target.name === "collegeName") setShowCollegeSuggestions(true);
+    if (e.target.name === "department") setShowDeptSuggestions(true);
   };
 
   const selectCollege = (college) => {
@@ -175,7 +207,7 @@ export default function OnboardingPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setError('');
+    setError("");
 
     try {
       const updateData = {
@@ -183,44 +215,46 @@ export default function OnboardingPage() {
         mobileNumber: formData.mobileNumber,
         collegeName: formData.collegeName,
         department: formData.department,
-        profileCompleted: true
+        // Store Google profile photo if available and not already stored
+        photoURL: user.photoURL || null,
+        profileCompleted: true,
       };
 
-      if (userRole === 'student') {
+      if (userRole === "student") {
         updateData.registerNumber = formData.registerNumber;
         updateData.academicYear = formData.academicYear;
       } else {
+        // Staff: staffId + profession
         updateData.staffId = formData.staffId;
-        updateData.designation = formData.designation;
+        updateData.profession = formData.profession;
+        updateData.designation = formData.profession; // keep designation field in sync
       }
 
-      await updateDoc(doc(db, 'users', user.uid), updateData);
+      await updateDoc(doc(db, "users", user.uid), updateData);
 
-      // Build minimal local data first, then persist
       const minimalData = {
         uid: user.uid,
         email: user.email,
         role: userRole,
         username: formData.username,
+        photoURL: user.photoURL || null,
         collegeName: formData.collegeName,
         department: formData.department,
-        profileCompleted: true
+        profileCompleted: true,
       };
 
-      // Update cookies for immediate middleware recognition
       document.cookie = `profileCompleted=true; path=/; max-age=3600; SameSite=Strict`;
       document.cookie = `userRole=${userRole}; path=/; max-age=3600; SameSite=Strict`;
 
-      // Persist to localStorage
       try {
-        localStorage.setItem('veraxon_user', JSON.stringify(minimalData));
-        localStorage.setItem('onboardingCompleted', 'true');
+        localStorage.setItem("veraxon_user", JSON.stringify(minimalData));
+        localStorage.setItem("onboardingCompleted", "true");
       } catch (storageErr) {
         localStorage.clear();
-        localStorage.setItem('veraxon_user', JSON.stringify(minimalData));
+        localStorage.setItem("veraxon_user", JSON.stringify(minimalData));
       }
 
-      router.push(userRole === 'staff' ? '/staff/dashboard' : '/student/dashboard');
+      router.push(userRole === "staff" ? "/staff/dashboard" : "/student/dashboard");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -230,22 +264,25 @@ export default function OnboardingPage() {
 
   const handleLogout = async () => {
     await signOut(auth);
-    router.push('/login');
+    router.push("/login");
   };
 
-  if (!user || (!userRole && !error)) return (
-    <div className="min-h-screen bg-black flex items-center justify-center font-inter">
-      <div className="ambient-matrix-bg" />
-      <div className="w-8 h-8 border-4 border-[#0052cc]/20 border-t-[#0052cc] rounded-full animate-spin" />
-    </div>
-  );
+  if (!user || (!userRole && !error))
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center font-inter">
+        <div className="ambient-matrix-bg" />
+        <div className="w-8 h-8 border-4 border-[#0052cc]/20 border-t-[#0052cc] rounded-full animate-spin" />
+      </div>
+    );
 
-  const filteredColleges = TN_COLLEGES.filter(c =>
+  const filteredColleges = TN_COLLEGES.filter((c) =>
     c.toLowerCase().includes(formData.collegeName.toLowerCase())
   );
-  const filteredDepts = DEPARTMENTS.filter(d =>
+  const filteredDepts = DEPARTMENTS.filter((d) =>
     d.toLowerCase().includes(formData.department.toLowerCase())
   );
+
+  const isStudent = userRole === "student";
 
   return (
     <div className="relative min-h-screen bg-black flex flex-col items-center justify-center p-6 selection:bg-[#0052cc] selection:text-white font-inter overflow-hidden py-12">
@@ -260,110 +297,255 @@ export default function OnboardingPage() {
         Sign Out
       </button>
 
-      <div className="mb-8 relative z-10 animate-fade-in-down">
-        <img src="/logov-removebg-preview.png" alt="Veraxon" className="h-20 w-auto drop-shadow-[0_0_30px_rgba(0,82,204,0.4)] hover:scale-105 transition-transform duration-700" />
+      <div className="mb-8 relative z-10">
+        <VeraxonLogo size="XL" theme="dark" className="drop-shadow-[0_0_30px_rgba(0,82,204,0.4)] hover:scale-105 transition-transform duration-700" />
       </div>
 
+      {/* Google Profile Preview */}
+      {user?.photoURL && (
+        <div className="relative z-10 mb-6 flex flex-col items-center gap-2">
+          <img
+            src={user.photoURL}
+            alt={user.displayName || "Profile"}
+            className="w-16 h-16 rounded-2xl border-2 border-[#0052cc]/40 object-cover shadow-[0_0_20px_rgba(0,82,204,0.3)]"
+            onError={(e) => { e.target.style.display = 'none'; }}
+          />
+          <span className="text-[8px] font-black text-white/30 uppercase tracking-widest">
+            {user.displayName || user.email}
+          </span>
+        </div>
+      )}
+
       <div className="w-full max-w-xl relative z-10">
-        <div className="jira-card !p-8 border-white/5 bg-[#0a0a0a]/80 backdrop-blur-3xl shadow-2xl">
+        <div className="jira-premium-card !p-8">
           <div className="text-center mb-8">
-            <h2 className="text-2xl font-black text-white italic uppercase tracking-[0.2em] mb-3">Initialize {userRole} Node</h2>
+            {/* Role badge */}
+            <div className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-full border mb-5 text-[9px] font-black uppercase tracking-widest ${
+              isStudent
+                ? "bg-[#0052cc]/10 border-[#0052cc]/30 text-[#0052cc]"
+                : "bg-purple-500/10 border-purple-500/30 text-purple-400"
+            }`}>
+              {isStudent ? <GraduationCap size={12} /> : <BookOpen size={12} />}
+              {isStudent ? "Student" : "Staff"} Profile Setup
+            </div>
+            <h2 className="text-2xl font-black text-white italic uppercase tracking-[0.2em] mb-3">
+              Initialize {isStudent ? "Candidate" : "Examiner"} Node
+            </h2>
             <div className="w-12 h-0.5 bg-[#0052cc] mx-auto mb-4" />
-            <p className="text-[10px] font-bold text-white/30 uppercase tracking-[0.4em]">Finalize institutional parameters for SSO</p>
+            <p className="text-[10px] font-bold text-white/30 uppercase tracking-[0.4em]">
+              {isStudent
+                ? "Enter your academic details to activate your portal"
+                : "Enter your institutional details to access the examiner dashboard"}
+            </p>
           </div>
 
           {error && (
-            <div className="mb-6 p-4 rounded-lg border border-red-500/20 bg-red-500/5 text-[9px] font-black uppercase tracking-[0.2em] text-red-500 text-center animate-pulse">
-              System Breach: {error}
+            <div className="mb-6 p-4 rounded-lg border border-red-500/20 bg-red-500/5 text-[9px] font-black uppercase tracking-[0.2em] text-red-500 text-center">
+              {error}
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Row 1: Name + Mobile */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-[8px] font-black text-white/30 mb-2 uppercase tracking-[0.3em] ml-1">Full Name</label>
-                <input type="text" name="username" required value={formData.username} onChange={handleChange} className="jira-input !py-3 uppercase !tracking-widest" />
+                <label className="block text-[8px] font-black text-white/30 mb-2 uppercase tracking-[0.3em] ml-1 flex items-center gap-1.5">
+                  <User size={9} /> Full Name
+                </label>
+                <input
+                  type="text"
+                  name="username"
+                  required
+                  value={formData.username}
+                  onChange={handleChange}
+                  placeholder="Your full name"
+                  className="jira-input !py-3"
+                />
               </div>
               <div>
-                <label className="block text-[8px] font-black text-white/30 mb-2 uppercase tracking-[0.3em] ml-1">Mobile Vector</label>
-                <input type="tel" name="mobileNumber" required value={formData.mobileNumber} onChange={handleChange} className="jira-input !py-3 uppercase !tracking-widest" />
+                <label className="block text-[8px] font-black text-white/30 mb-2 uppercase tracking-[0.3em] ml-1 flex items-center gap-1.5">
+                  <Phone size={9} /> Mobile Number
+                </label>
+                <input
+                  type="tel"
+                  name="mobileNumber"
+                  required
+                  value={formData.mobileNumber}
+                  onChange={handleChange}
+                  placeholder="10-digit number"
+                  className="jira-input !py-3"
+                />
               </div>
             </div>
 
+            {/* Row 2: College + Department */}
             <div className="grid grid-cols-2 gap-4">
               <div className="relative" ref={collegeRef}>
-                <label className="block text-[8px] font-black text-white/30 mb-2 uppercase tracking-[0.3em] ml-1">Foundation (College)</label>
-                <input type="text" name="collegeName" required autoComplete="off" value={formData.collegeName} onChange={handleChange} className="jira-input !py-3 uppercase !tracking-widest" />
+                <label className="block text-[8px] font-black text-white/30 mb-2 uppercase tracking-[0.3em] ml-1 flex items-center gap-1.5">
+                  <Building2 size={9} /> College / Institution
+                </label>
+                <input
+                  type="text"
+                  name="collegeName"
+                  required
+                  autoComplete="off"
+                  value={formData.collegeName}
+                  onChange={handleChange}
+                  placeholder="Start typing..."
+                  className="jira-input !py-3"
+                />
                 {showCollegeSuggestions && filteredColleges.length > 0 && (
-                  <div className="absolute z-50 w-full mt-2 bg-[#0d1117] border border-white/10 rounded-xl max-h-48 overflow-y-auto shadow-2xl custom-scrollbar animate-fade-in">
+                  <div className="absolute z-50 w-full mt-2 bg-[#0d1117] border border-white/10 rounded-xl max-h-48 overflow-y-auto shadow-2xl">
                     {filteredColleges.map((college, idx) => (
-                      <button key={idx} type="button" onClick={() => selectCollege(college)} className="w-full text-left px-5 py-3 text-[9px] font-bold text-white/60 hover:text-white hover:bg-[#0052cc]/20 transition-all uppercase tracking-widest border-b border-white/5 last:border-0">{college}</button>
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => selectCollege(college)}
+                        className="w-full text-left px-5 py-3 text-[9px] font-bold text-white/60 hover:text-white hover:bg-[#0052cc]/20 transition-all uppercase tracking-widest border-b border-white/5 last:border-0"
+                      >
+                        {college}
+                      </button>
                     ))}
                   </div>
                 )}
               </div>
 
               <div className="relative" ref={deptRef}>
-                <label className="block text-[8px] font-black text-white/30 mb-2 uppercase tracking-[0.3em] ml-1">Division (Dept)</label>
-                <input type="text" name="department" required autoComplete="off" value={formData.department} onChange={handleChange} className="jira-input !py-3 uppercase !tracking-widest" />
+                <label className="block text-[8px] font-black text-white/30 mb-2 uppercase tracking-[0.3em] ml-1 flex items-center gap-1.5">
+                  <Layers size={9} /> Department
+                </label>
+                <input
+                  type="text"
+                  name="department"
+                  required
+                  autoComplete="off"
+                  value={formData.department}
+                  onChange={handleChange}
+                  placeholder="Start typing..."
+                  className="jira-input !py-3"
+                />
                 {showDeptSuggestions && filteredDepts.length > 0 && (
-                  <div className="absolute z-50 w-full mt-2 bg-[#0d1117] border border-white/10 rounded-xl max-h-48 overflow-y-auto shadow-2xl custom-scrollbar animate-fade-in">
+                  <div className="absolute z-50 w-full mt-2 bg-[#0d1117] border border-white/10 rounded-xl max-h-48 overflow-y-auto shadow-2xl">
                     {filteredDepts.map((dept, idx) => (
-                      <button key={idx} type="button" onClick={() => selectDept(dept)} className="w-full text-left px-5 py-3 text-[9px] font-bold text-white/60 hover:text-white hover:bg-[#0052cc]/20 transition-all uppercase tracking-widest border-b border-white/5 last:border-0">{dept}</button>
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => selectDept(dept)}
+                        className="w-full text-left px-5 py-3 text-[9px] font-bold text-white/60 hover:text-white hover:bg-[#0052cc]/20 transition-all uppercase tracking-widest border-b border-white/5 last:border-0"
+                      >
+                        {dept}
+                      </button>
                     ))}
                   </div>
                 )}
               </div>
             </div>
 
-            <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5 shadow-inner">
-              <span className="block text-[8px] font-black text-[#0052cc] uppercase tracking-widest mb-4">{userRole} Specifics</span>
-              {userRole === 'student' ? (
+            {/* Role-specific section */}
+            <div className={`p-5 rounded-xl border shadow-inner ${
+              isStudent
+                ? "bg-[#0052cc]/5 border-[#0052cc]/20"
+                : "bg-purple-500/5 border-purple-500/20"
+            }`}>
+              <span className={`block text-[8px] font-black uppercase tracking-widest mb-4 ${
+                isStudent ? "text-[#0052cc]" : "text-purple-400"
+              }`}>
+                {isStudent ? "🎓 Student Credentials" : "🏫 Staff Credentials"}
+              </span>
+
+              {isStudent ? (
+                /* STUDENT: Register Number + Academic Year */
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-[8px] font-black text-white/30 mb-2 uppercase tracking-[0.3em] ml-1">Register Number</label>
-                    <input type="text" name="registerNumber" required value={formData.registerNumber} onChange={handleChange} className="jira-input !py-3 !tracking-widest" />
+                    <label className="block text-[8px] font-black text-white/30 mb-2 uppercase tracking-[0.3em] ml-1">
+                      Student / Register Number
+                    </label>
+                    <input
+                      type="text"
+                      name="registerNumber"
+                      required
+                      value={formData.registerNumber}
+                      onChange={handleChange}
+                      placeholder="e.g. 21CSE0042"
+                      className="jira-input !py-3 uppercase !tracking-widest"
+                    />
                   </div>
                   <div>
-                    <label className="block text-[8px] font-black text-white/30 mb-2 uppercase tracking-[0.3em] ml-1">Academic Year</label>
-                    <input type="text" name="academicYear" required value={formData.academicYear} onChange={handleChange} placeholder="e.g. 3rd Year" className="jira-input !py-3 !tracking-widest" />
+                    <label className="block text-[8px] font-black text-white/30 mb-2 uppercase tracking-[0.3em] ml-1">
+                      Academic Year
+                    </label>
+                    <select
+                      name="academicYear"
+                      required
+                      value={formData.academicYear}
+                      onChange={handleChange}
+                      className="jira-input !py-3 appearance-none cursor-pointer"
+                    >
+                      <option value="">Select Year</option>
+                      {ACADEMIC_YEARS.map((y) => (
+                        <option key={y} value={y} className="bg-black text-white">
+                          {y}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               ) : (
+                /* STAFF: Staff ID + Profession */
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-[8px] font-black text-white/30 mb-2 uppercase tracking-[0.3em] ml-1">Staff ID</label>
-                    <input type="text" name="staffId" required value={formData.staffId} onChange={handleChange} className="jira-input !py-3 !tracking-widest" />
+                    <label className="block text-[8px] font-black text-white/30 mb-2 uppercase tracking-[0.3em] ml-1">
+                      Staff ID
+                    </label>
+                    <input
+                      type="text"
+                      name="staffId"
+                      required
+                      value={formData.staffId}
+                      onChange={handleChange}
+                      placeholder="e.g. STF-2024-001"
+                      className="jira-input !py-3 uppercase !tracking-widest"
+                    />
                   </div>
                   <div>
-                    <label className="block text-[8px] font-black text-white/30 mb-2 uppercase tracking-[0.3em] ml-1">Designation</label>
-                    <input type="text" name="designation" required value={formData.designation} onChange={handleChange} placeholder="e.g. Professor" className="jira-input !py-3 !tracking-widest" />
+                    <label className="block text-[8px] font-black text-white/30 mb-2 uppercase tracking-[0.3em] ml-1">
+                      Profession / Designation
+                    </label>
+                    <select
+                      name="profession"
+                      required
+                      value={formData.profession}
+                      onChange={handleChange}
+                      className="jira-input !py-3 appearance-none cursor-pointer"
+                    >
+                      <option value="">Select Designation</option>
+                      {STAFF_PROFESSIONS.map((p) => (
+                        <option key={p} value={p} className="bg-black text-white">
+                          {p}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               )}
             </div>
 
-            <button type="submit" disabled={loading} className="jira-btn-primary w-full !py-4 mt-2 text-[11px]">
-              {loading ? <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin mx-auto" /> : 'Finalize Node Sync'}
+            <button
+              type="submit"
+              disabled={loading}
+              className="jira-btn-primary w-full !py-4 mt-2 text-[11px]"
+            >
+              {loading ? (
+                <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin mx-auto" />
+              ) : (
+                `Activate ${isStudent ? "Candidate" : "Examiner"} Portal →`
+              )}
             </button>
           </form>
         </div>
       </div>
 
-      <footer className="mt-auto py-12 flex flex-col items-center gap-6 relative z-10 w-full">
-        <div className="w-32 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-        <div className="flex flex-col items-center gap-4">
-          <img
-            src="/logov-removebg-preview.png"
-            alt="Veraxon"
-            className="h-10 opacity-30 hover:opacity-100 transition-all duration-700"
-          />
-          <div className="flex gap-8 text-center">
-            <span className="text-[9px] font-black text-white/10 uppercase tracking-[0.5em]">TRUSTED NODE</span>
-            <span className="text-[9px] font-black text-white/10 uppercase tracking-[0.5em]">TAMIL NADU REGION</span>
-          </div>
-        </div>
-      </footer>
+      <VeraxonFooter />
     </div>
   );
 }

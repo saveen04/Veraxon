@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { VeraxonLogo } from '@/lib/brand';
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -196,11 +197,7 @@ export default function AdminDashboard() {
           {/* Logo Header & Brand Name */}
           <div className="flex items-center justify-between px-2 py-1">
             <Link href="/" className="flex items-center gap-2 group">
-              <img
-                src="/logov-removebg-preview.png"
-                alt="Veraxon Brand"
-                className="w-8 h-8 object-contain transition-transform duration-300 group-hover:rotate-12 group-hover:scale-110"
-              />
+              <VeraxonLogo size="SM" className="transition-transform duration-300 group-hover:scale-110 drop-shadow-[0_0_8px_rgba(0,82,204,0.4)]" />
               {!sidebarCollapsed && (
                 <span className="text-lg font-bold tracking-tight text-white font-sans transition-all duration-300">
                   Veraxon
