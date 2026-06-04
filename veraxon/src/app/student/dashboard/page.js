@@ -7,85 +7,127 @@ import Sidebar from "@/components/Sidebar";
 import Footer from "@/components/Footer";
 import NotificationDropdown from "@/components/NotificationDropdown";
 import { db } from "@/lib/firebase";
-import { collection, query, where, getDocs, onSnapshot } from "firebase/firestore";
+import { collection, query, where, getDocs } from "firebase/firestore";
 import { motion } from "framer-motion";
 import {
-  Play, ShieldCheck, History, Zap, Trophy, Activity,
-  ClipboardList, RefreshCw, CheckCircle2, Clock, ChevronRight, Layers
+  Play, ShieldCheck, History, Activity,
+  ClipboardList, CheckCircle2, Clock, ChevronRight, Layers
 } from "lucide-react";
 
-function SkeletonCard() {
-  return <div className="jira-premium-card !p-6 animate-pulse"><div className="h-4 bg-white/[0.05] rounded w-1/2 mb-3" /><div className="h-7 bg-white/[0.07] rounded w-1/3" /></div>;
+function Skel({ className = "" }) {
+  return <div className={`skeleton rounded-xl ${className}`} aria-hidden="true" />;
+}
+
+function PageSpinner({ label = "Loading portal…" }) {
+  return (
+    <div className="min-h-screen bg-[#030303] flex flex-col items-center justify-center gap-3">
+      <div className="w-8 h-8 border-4 border-[#0052cc]/20 border-t-[#0052cc] rounded-full animate-spin" />
+      <p className="text-[10px] font-black text-white/20 uppercase tracking-[0.3em]">{label}</p>
+    </div>
+  );
 }
 
 export default function StudentDashboard() {
   const { user, userData, loading } = useAuth();
   const router = useRouter();
-  const [stats, setStats] = useState({ assigned: 0, completed: 0, retakes: 0, integrity: 98 });
+
+  const [stats,       setStats]       = useState({ assigned: 0, completed: 0, integrity: 98 });
   const [recentTests, setRecentTests] = useState([]);
   const [dataLoading, setDataLoading] = useState(true);
 
+  /* ── Guard: runs once loading=false (user+userData resolved atomically) ─ */
   useEffect(() => {
     if (loading) return;
-    if (!user) { router.push("/login"); return; }
-    // Wait for userData before making role-based decisions
-    if (!userData) return;
-    if (userData.role !== "student" && userData.role !== "admin") { router.push("/staff/dashboard"); return; }
-    if (!userData.profileCompleted && !(userData.collegeName && userData.department)) { router.push("/onboarding"); return; }
+
+    if (!user || !userData) {
+      router.replace("/login");
+      return;
+    }
+
+    if (userData.role === "staff" || userData.role === "admin") {
+      router.replace("/staff/dashboard");
+      return;
+    }
+
+    if (!userData.profileCompleted && !(userData.collegeName && userData.department)) {
+      router.replace("/onboarding");
+    }
   }, [loading, user, userData, router]);
 
+  /* ── Load data only when we know the user is a student ──────────── */
   useEffect(() => {
-    if (!user) return;
-    const loadData = async () => {
+    if (loading || !user || !userData) return;
+    if (userData.role !== "student" && userData.role !== "admin") return;
+
+    let cancelled = false;
+
+    (async () => {
       try {
-        // Assigned assessments
-        const assignQ = query(collection(db, "assignments"), where("assignedTo", "array-contains", user.uid), where("status", "==", "active"));
-        const assignSnap = await getDocs(assignQ);
-        const allAssigned = assignSnap.docs.map(d => d.data());
-        const regular = allAssigned.filter(a => !a.isRetake);
-        const retakes = allAssigned.filter(a => a.isRetake);
+        const [assignSnap, subSnap, pubSnap] = await Promise.all([
+          // Single-field query only — filter isRetake client-side
+          getDocs(query(
+            collection(db, "assignments"),
+            where("assignedTo", "array-contains", user.uid)
+          )),
+          getDocs(query(
+            collection(db, "submissions"),
+            where("userId", "==", user.uid)
+          )),
+          getDocs(query(
+            collection(db, "tests"),
+            where("status", "==", "published")
+          )),
+        ]);
 
-        // Completed submissions
-        const subQ = query(collection(db, "submissions"), where("userId", "==", user.uid));
-        const subSnap = await getDocs(subQ);
-        const subs = subSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-        const completed = subs.filter(s => s.status === "completed" || s.status === "disqualified");
+        if (cancelled) return;
 
-        // Recent published tests
-        const pubQ = query(collection(db, "tests"), where("status", "==", "published"));
-        const pubSnap = await getDocs(pubQ);
-        const pub = pubSnap.docs.map(d => ({ id: d.id, ...d.data() })).slice(0, 4);
+        // Filter active assignments client-side to avoid composite index
+        const allAssigned = assignSnap.docs
+          .map(d => d.data())
+          .filter(a => a.status === "active");
+        const subs = subSnap.docs.map(d => d.data());
 
-        setStats({ assigned: regular.length, completed: completed.length, retakes: retakes.length, integrity: 98 });
-        setRecentTests(pub);
-      } catch (e) { console.error(e); }
-      finally { setDataLoading(false); }
-    };
-    loadData();
-  }, [user]);
+        setStats({
+          assigned:  allAssigned.filter(a => !a.isRetake).length,
+          completed: subs.filter(s => s.status === "completed" || s.status === "disqualified").length,
+          integrity: 98,
+        });
+        setRecentTests(pubSnap.docs.map(d => ({ id: d.id, ...d.data() })).slice(0, 4));
+      } catch (e) {
+        console.error("[StudentDashboard] data load error:", e.code, e.message);
+      } finally {
+        if (!cancelled) setDataLoading(false);
+      }
+    })();
 
-  // Still resolving auth — don't render or redirect yet
-  if (loading || (user && !userData)) return null;
+    return () => { cancelled = true; };
+  }, [loading, user, userData]);
 
-  // Auth resolved but no session — go to login
-  if (!user) return null; // redirect handled in useEffect
+  /* ── While auth resolves show spinner ───────────────────────────── */
+  if (loading) return <PageSpinner />;
 
-  // Wrong role — redirect handled in useEffect
-  if (userData && userData.role !== "student" && userData.role !== "admin") return null;
+  /* ── After auth: wrong state → spinner while redirect navigates ── */
+  if (!user || !userData) return <PageSpinner />;
+  if (userData.role === "staff" || userData.role === "admin") return <PageSpinner label="Redirecting to staff portal…" />;
 
+  /* ── Render dashboard ───────────────────────────────────────────── */
   const statItems = [
-    { label: "Assigned", value: stats.assigned, icon: <ClipboardList size={18} />, color: "text-[#0052cc]", bg: "bg-[#0052cc]/10", href: "/student/assessments" },
-    { label: "Completed", value: stats.completed, icon: <CheckCircle2 size={18} />, color: "text-emerald-400", bg: "bg-emerald-400/10", href: "/student/history" },
-    { label: "Retakes", value: stats.retakes, icon: <RefreshCw size={18} />, color: "text-amber-400", bg: "bg-amber-400/10", href: "/student/retakes" },
-    { label: "Integrity", value: `${stats.integrity}%`, icon: <ShieldCheck size={18} />, color: "text-violet-400", bg: "bg-violet-400/10", href: "/student/stats" },
+    { label: "Assigned",  value: stats.assigned,        icon: <ClipboardList size={18} />, color: "text-[#0052cc]",   bg: "bg-[#0052cc]/10",   href: "/student/assessments" },
+    { label: "Completed", value: stats.completed,       icon: <CheckCircle2 size={18} />,  color: "text-emerald-400", bg: "bg-emerald-400/10", href: "/results" },
+    { label: "Results",   value: "View",                icon: <History size={18} />,        color: "text-amber-400",   bg: "bg-amber-400/10",   href: "/results" },
+    { label: "Integrity", value: `${stats.integrity}%`, icon: <ShieldCheck size={18} />,   color: "text-violet-400",  bg: "bg-violet-400/10",  href: "/student/stats" },
   ];
 
   return (
-    <div className="min-h-screen bg-black flex flex-col font-inter text-white">
+    <div className="h-screen bg-[#030303] flex flex-col font-inter text-white overflow-hidden">
       <div className="ambient-matrix-bg opacity-20" />
-      <div className="flex flex-1">
-        <Sidebar role="student" />
-        <main className="flex-1 ml-64 p-10 overflow-y-auto">
+      <Sidebar role="student" />
+      <div className="flex flex-1 overflow-hidden">
+        {/* Spacer reserves the 256px fixed sidebar slot in flex layout */}
+        <div className="sidebar-spacer" />
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <main className="flex-1 overflow-y-auto p-8 xl:p-10 custom-scrollbar">
+
           {/* Header */}
           <header className="flex items-center justify-between mb-8 border-b border-white/[0.06] pb-6">
             <div>
@@ -94,9 +136,11 @@ export default function StudentDashboard() {
                 <span className="text-[9px] font-black text-[#0052cc] uppercase tracking-[0.3em]">Terminal Online</span>
               </div>
               <h1 className="text-3xl font-black uppercase italic tracking-tighter text-white">
-                Welcome, {userData?.username?.split(" ")[0] || "Candidate"}
+                Welcome, {userData.username?.split(" ")[0] || "Candidate"}
               </h1>
-              <p className="text-[10px] text-white/35 uppercase tracking-widest mt-1.5 font-medium">{userData?.collegeName} · {userData?.department}</p>
+              <p className="text-[10px] text-white/35 uppercase tracking-widest mt-1.5 font-medium">
+                {userData.collegeName || "—"} · {userData.department || "—"}
+              </p>
             </div>
             <div className="flex items-center gap-4">
               <Link href="/student/assessments" className="jira-btn-primary !py-2.5 !px-5 flex items-center gap-2 text-[11px]">
@@ -106,19 +150,27 @@ export default function StudentDashboard() {
             </div>
           </header>
 
-          {/* Stats */}
+          {/* Stat cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-            {dataLoading ? [...Array(4)].map((_, i) => <SkeletonCard key={i} />) : statItems.map((s, i) => (
-              <motion.div key={s.label} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}>
-                <Link href={s.href} className="jira-premium-card !p-5 flex items-center gap-4 hover:scale-[1.02] transition-transform block">
-                  <div className={`p-2.5 rounded-xl ${s.bg} ${s.color} shrink-0`}>{s.icon}</div>
-                  <div>
-                    <p className="text-[9px] font-black text-white/30 uppercase tracking-widest">{s.label}</p>
-                    <p className={`text-2xl font-black italic ${s.color}`}>{s.value}</p>
-                  </div>
-                </Link>
-              </motion.div>
-            ))}
+            {dataLoading
+              ? [...Array(4)].map((_, i) => (
+                <div key={i} className="jira-premium-card !p-6">
+                  <div className="flex items-center gap-4 mb-4"><Skel className="w-11 h-11" /><div className="flex-1 space-y-2"><Skel className="h-2.5 w-1/3" /><Skel className="h-2 w-1/2" /></div></div>
+                  <Skel className="h-8 w-1/3" />
+                </div>
+              ))
+              : statItems.map((s, i) => (
+                <motion.div key={s.label} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }}>
+                  <Link href={s.href} className="jira-premium-card !p-5 flex items-center gap-4 hover:scale-[1.02] transition-transform block">
+                    <div className={`p-2.5 rounded-xl ${s.bg} ${s.color} shrink-0`}>{s.icon}</div>
+                    <div>
+                      <p className="text-[9px] font-black text-white/30 uppercase tracking-widest">{s.label}</p>
+                      <p className={`text-2xl font-black italic ${s.color}`}>{s.value}</p>
+                    </div>
+                  </Link>
+                </motion.div>
+              ))
+            }
           </div>
 
           {/* Available assessments */}
@@ -131,24 +183,26 @@ export default function StudentDashboard() {
                 View All <ChevronRight size={11} />
               </Link>
             </div>
+
             {dataLoading ? (
-              <div className="space-y-3">{[...Array(3)].map((_, i) => <div key={i} className="h-16 bg-white/[0.02] rounded-xl animate-pulse" />)}</div>
+              <div className="space-y-3">{[...Array(3)].map((_, i) => <Skel key={i} className="h-16" />)}</div>
             ) : recentTests.length === 0 ? (
-              <div className="py-12 text-center border border-dashed border-white/5 rounded-2xl">
+              <div className="py-12 text-center border border-dashed border-white/[0.06] rounded-2xl">
                 <ClipboardList size={32} className="text-white/10 mx-auto mb-3" />
                 <p className="text-[11px] text-white/20 uppercase tracking-widest">No assessments available yet.</p>
+                <p className="text-[10px] text-white/10 mt-1.5">Ask your instructor to publish assessments or join via session token.</p>
               </div>
             ) : (
               <div className="space-y-3">
                 {recentTests.map((test, i) => (
                   <motion.div key={test.id} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.06 }}
-                    className="glass-card !p-4 rounded-xl border border-white/5 flex items-center justify-between gap-4 hover:border-[#0052cc]/30 transition-all">
+                    className="glass-card !p-4 rounded-xl border border-white/[0.06] flex items-center justify-between gap-4 hover:border-[#0052cc]/30 transition-all">
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="w-9 h-9 rounded-xl bg-[#0052cc]/10 flex items-center justify-center shrink-0"><Layers size={14} className="text-[#0052cc]" /></div>
                       <div className="min-w-0">
                         <p className="font-black text-sm text-white truncate">{test.title}</p>
                         <p className="text-[9px] text-white/30 flex items-center gap-2 mt-0.5">
-                          <Clock size={8} /> {test.duration} min · {test.questions?.length || 0} Questions
+                          <Clock size={8} /> {test.duration || 0} min · {test.questions?.length || test.questionCount || 0} Qs
                         </p>
                       </div>
                     </div>
@@ -162,12 +216,12 @@ export default function StudentDashboard() {
           </section>
 
           {/* Quick links */}
-          <section className="grid grid-cols-2 gap-4">
-            <Link href="/student/retakes" className="jira-premium-card !p-5 flex items-center gap-4 hover:border-amber-400/30 transition-all group">
-              <div className="p-3 rounded-xl bg-amber-400/10 text-amber-400 group-hover:scale-110 transition-transform"><RefreshCw size={18} /></div>
+          <section className="grid grid-cols-2 gap-4 pb-6">
+            <Link href="/results" className="jira-premium-card !p-5 flex items-center gap-4 hover:border-[#0052cc]/30 transition-all group">
+              <div className="p-3 rounded-xl bg-[#0052cc]/10 text-[#0052cc] group-hover:scale-110 transition-transform"><ClipboardList size={18} /></div>
               <div>
-                <p className="font-black text-sm text-white">Retake Assessments</p>
-                <p className="text-[9px] text-white/30 uppercase tracking-widest mt-0.5">{stats.retakes} pending</p>
+                <p className="font-black text-sm text-white">My Results</p>
+                <p className="text-[9px] text-white/30 uppercase tracking-widest mt-0.5">{stats.completed} completed</p>
               </div>
               <ChevronRight size={14} className="text-white/20 ml-auto" />
             </Link>
@@ -175,14 +229,16 @@ export default function StudentDashboard() {
               <div className="p-3 rounded-xl bg-emerald-400/10 text-emerald-400 group-hover:scale-110 transition-transform"><History size={18} /></div>
               <div>
                 <p className="font-black text-sm text-white">Exam History</p>
-                <p className="text-[9px] text-white/30 uppercase tracking-widest mt-0.5">{stats.completed} completed</p>
+                <p className="text-[9px] text-white/30 uppercase tracking-widest mt-0.5">Full attempt log</p>
               </div>
               <ChevronRight size={14} className="text-white/20 ml-auto" />
             </Link>
           </section>
-        </main>
+
+          </main>
+          <Footer />
+        </div>
       </div>
-      <Footer className="ml-64" />
     </div>
   );
 }

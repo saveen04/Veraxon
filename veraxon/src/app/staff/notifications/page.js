@@ -20,11 +20,11 @@ export default function StaffNotificationsPage() {
   if (!loading && !user) return null;
 
   return (
-    <div className="min-h-screen bg-black flex flex-col font-inter text-white">
+    <div className="h-screen bg-black flex flex-col overflow-hidden font-inter text-white">
       <div className="ambient-matrix-bg opacity-20" />
-      <div className="flex flex-1">
+      <div className="flex flex-1 overflow-hidden">
         <Sidebar role="staff" />
-        <main className="flex-1 ml-64 p-10 overflow-y-auto">
+        <div className="flex-1 ml-64 flex flex-col overflow-hidden"><main className="flex-1 overflow-y-auto p-10 custom-scrollbar">
           <header className="flex items-center gap-4 mb-8 border-b border-white/[0.06] pb-6">
             <span className="text-violet-400"><BellIcon size={28} /></span>
             <div>
@@ -41,8 +41,9 @@ export default function StaffNotificationsPage() {
             </p>
           </div>
         </main>
+          <Footer />
+        </div>
       </div>
-      <Footer className="ml-64" />
     </div>
   );
 }

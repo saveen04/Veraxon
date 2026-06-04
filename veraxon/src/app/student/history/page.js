@@ -62,11 +62,12 @@ export default function StudentHistoryPage() {
   }
 
   return (
-    <div className="min-h-screen bg-black flex font-inter text-white selection:bg-[#0052cc]">
+    <div className="h-screen bg-[#030303] flex flex-col font-inter text-white overflow-hidden selection:bg-[#0052cc]">
       <div className="ambient-matrix-bg opacity-20" />
-      <Sidebar role="student" />
-
-      <main className="flex-1 ml-64 p-8 overflow-y-auto">
+      <div className="flex flex-1 overflow-hidden">
+        <Sidebar role="student" />
+        <div className="flex-1 ml-64 flex flex-col overflow-hidden">
+          <main className="flex-1 overflow-y-auto p-8 custom-scrollbar">
         <header className="flex items-center justify-between mb-8 border-b border-white/5 pb-6">
           <div>
             <span className="text-[9px] font-black text-white/30 uppercase tracking-[0.3em]">Student Portal</span>
@@ -181,7 +182,9 @@ export default function StudentHistoryPage() {
           </div>
         )}
       </main>
-      <Footer className="ml-64" />
+          <Footer />
+        </div>
+      </div>
     </div>
   );
 }

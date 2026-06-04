@@ -82,11 +82,11 @@ function SidebarContent({ onNavigate }) {
     { icon: DashboardIcon,  label: 'Dashboard',    href: '/student/dashboard' },
     { icon: AssessmentIcon, label: 'Assessments',  href: '/student/assessments' },
     { icon: SessionIcon,    label: 'Sessions',     href: '/student/sessions' },
-    { icon: ResultsIcon,    label: 'Results',      href: '/student/history' },
+    { icon: ResultsIcon,    label: 'Results',      href: '/results' },
     { section: 'Performance' },
     { icon: AnalyticsIcon,  label: 'Analytics',    href: '/student/stats' },
+    { icon: HistoryIcon,    label: 'History',      href: '/student/history' },
     { section: 'Account' },
-    { icon: ProfileIcon,    label: 'Profile',      href: '/settings' },
     { icon: SettingsIcon,   label: 'Settings',     href: '/settings' },
     { icon: BellIcon,       label: 'Notifications',href: '/student/notifications' },
   ];
@@ -94,19 +94,18 @@ function SidebarContent({ onNavigate }) {
   /* Staff nav — all items always visible */
   const staffNav = [
     { section: 'Overview' },
-    { icon: DashboardIcon,  label: 'Dashboard',          href: '/staff/dashboard' },
-    { icon: StudentsIcon,   label: 'Students',           href: '/staff/candidates' },
+    { icon: DashboardIcon,  label: 'Dashboard',       href: '/staff/dashboard' },
+    { icon: StudentsIcon,   label: 'Students',        href: '/staff/candidates' },
     { section: 'Assessments' },
-    { icon: AssessmentIcon, label: 'Assessment Mgmt',    href: '/staff/assessments' },
-    { icon: BuilderIcon,    label: 'Builder',            href: '/staff/builder' },
-    { icon: AssignIcon,     label: 'Assignments',        href: '/staff/assign' },
+    { icon: AssessmentIcon, label: 'Manage',          href: '/staff/assessments' },
+    { icon: BuilderIcon,    label: 'Builder',         href: '/staff/builder' },
+    { icon: AssignIcon,     label: 'Assign',          href: '/staff/assign' },
     { section: 'Monitoring' },
-    { icon: MonitorIcon,    label: 'Proctor Monitor',    href: '/staff/proctor' },
-    { icon: AnalyticsIcon,  label: 'Analytics',          href: '/staff/stats' },
-    { icon: ReportsIcon,    label: 'Reports',            href: '/staff/stats' },
+    { icon: MonitorIcon,    label: 'Live Monitor',    href: '/staff/proctor' },
+    { icon: AnalyticsIcon,  label: 'Analytics',       href: '/staff/stats' },
     { section: 'Account' },
-    { icon: SettingsIcon,   label: 'Settings',           href: '/settings' },
-    { icon: BellIcon,       label: 'Notifications',      href: '/staff/notifications' },
+    { icon: SettingsIcon,   label: 'Settings',        href: '/settings' },
+    { icon: BellIcon,       label: 'Notifications',   href: '/staff/notifications' },
   ];
 
   const navItems = role === 'staff' || role === 'admin' ? staffNav : studentNav;
@@ -146,7 +145,7 @@ function SidebarContent({ onNavigate }) {
           }
           return (
             <NavItem
-              key={item.href}
+              key={`nav-${idx}`}
               icon={item.icon}
               label={item.label}
               href={item.href}

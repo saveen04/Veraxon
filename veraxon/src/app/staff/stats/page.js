@@ -2,271 +2,271 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { collection, getDocs, query, where } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import Footer from '@/components/Footer';
 import { motion } from 'framer-motion';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  LineChart, Line, PieChart, Pie, Cell, Legend
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell, Legend
 } from 'recharts';
 import {
   ShieldCheck, Users, BarChart2, TrendingUp, AlertTriangle,
-  Download, Search, ChevronRight, Activity, Trophy, Target
+  Download, Search, ChevronRight, Activity, Trophy, ShieldAlert
 } from 'lucide-react';
 
-const PIE_COLORS = ['#10b981', '#ef4444', '#f59e0b'];
+function PageSpinner() {
+  return (
+    <div className="min-h-screen bg-[#030303] flex items-center justify-center">
+      <div className="w-8 h-8 border-4 border-[#0052cc]/20 border-t-[#0052cc] rounded-full animate-spin" />
+    </div>
+  );
+}
+
+function Skel({ className = '' }) {
+  return <div className={`skeleton rounded-xl ${className}`} aria-hidden="true" />;
+}
+
+const TOOLTIP_STYLE = {
+  contentStyle: { background: '#10121a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, fontSize: 11 },
+};
 
 export default function StaffStatsPage() {
-  const { user, userData, loading: authLoading } = useAuth();
+  const { user, userData, loading } = useAuth();
   const router = useRouter();
-  const [submissions, setSubmissions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
 
-  useEffect(() => {
-    if (!authLoading && (!user || (userData && userData.role !== 'staff' && userData.role !== 'admin'))) {
-      router.push('/login');
-    }
-  }, [user, userData, authLoading, router]);
+  const [apiData,   setApiData]   = useState(null);
+  const [fetching,  setFetching]  = useState(true);
+  const [error,     setError]     = useState('');
+  const [search,    setSearch]    = useState('');
 
+  /* ── Auth guard ─────────────────────────────────────────────── */
   useEffect(() => {
-    const fetchStats = async () => {
-      if (!userData) return;
+    if (loading) return;
+    if (!user || !userData) { router.replace('/login'); return; }
+    if (userData.role === 'student') router.replace('/student/stats');
+  }, [loading, user, userData, router]);
+
+  /* ── Fetch stats ─────────────────────────────────────────────── */
+  useEffect(() => {
+    if (loading || !user || !userData) return;
+    if (userData.role !== 'staff' && userData.role !== 'admin') return;
+
+    (async () => {
       try {
-        // Use simple queries to avoid composite index requirement
-        const q = query(
-          collection(db, 'submissions'),
-          where('collegeName', '==', userData?.collegeName || '')
-        );
-        const querySnapshot = await getDocs(q);
-        const all = querySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-
-        // Filter by department client-side to avoid 2-field composite index
-        const filtered = all.filter((s) =>
-          !userData?.department || s.department === userData.department
-        );
-
-        // Sort by completedAt client-side
-        filtered.sort((a, b) => {
-          const aT = a.completedAt?.toMillis?.() || 0;
-          const bT = b.completedAt?.toMillis?.() || 0;
-          return bT - aT;
+        const params = new URLSearchParams({
+          createdBy:   user.uid,
+          collegeName: userData.collegeName || '',
         });
-
-        setSubmissions(filtered);
-      } catch (err) {
-        console.error('Error fetching stats:', err);
+        const res  = await fetch(`/api/stats?${params}`);
+        const data = await res.json();
+        if (data.success) setApiData(data);
+        else setError('No analytics data available.');
+      } catch {
+        setError('Failed to load analytics.');
       } finally {
-        setLoading(false);
+        setFetching(false);
       }
-    };
-    if (userData) fetchStats();
-  }, [userData]);
+    })();
+  }, [loading, user, userData]);
 
-  const completed = submissions.filter((s) => s.status === 'completed' || s.status === 'disqualified');
-  const passed = completed.filter((s) => (s.score || 0) >= 40).length;
-  const avg = completed.length
-    ? (completed.reduce((a, b) => a + (b.score || 0), 0) / completed.length).toFixed(1)
-    : 0;
-  const totalViolations = submissions.reduce((a, b) => a + (b.totalViolations || 0), 0);
-
-  const pieData = [
-    { name: 'Passed', value: passed },
-    { name: 'Failed', value: Math.max(0, completed.length - passed) },
-  ].filter((d) => d.value > 0);
-
-  // Build per-student score chart data (last 20)
-  const scoreData = completed.slice(0, 20).map((s) => ({
-    name: (s.userName || 'Anon').substring(0, 8),
-    score: parseFloat((s.score || 0).toFixed(1)),
-  })).reverse();
-
-  const filtered = submissions.filter((s) =>
-    !searchQuery ||
-    (s.userName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (s.examTitle || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
+  /* ── CSV export ─────────────────────────────────────────────── */
   const handleExportCSV = () => {
-    const headers = ['Name', 'Score', 'Status', 'Violations', 'Date'];
-    const rows = submissions.map((s) => [
-      s.userName || 'Anonymous',
-      (s.score || 0).toFixed(1) + '%',
-      s.status || 'unknown',
-      s.totalViolations || 0,
-      s.completedAt?.toDate ? s.completedAt.toDate().toLocaleDateString() : 'N/A',
+    if (!apiData?.recentActivity) return;
+    const headers = ['Student', 'Exam', 'Violation Type', 'Severity', 'Date'];
+    const rows = apiData.recentActivity.map(a => [
+      a.studentName, a.examTitle, a.type, a.severity,
+      a.timestamp ? new Date(a.timestamp).toLocaleDateString() : 'N/A',
     ]);
-    const csv = [headers, ...rows].map((r) => r.join(',')).join('\n');
+    const csv  = [headers, ...rows].map(r => r.join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `veraxon-stats-${userData?.department || 'dept'}-${Date.now()}.csv`;
-    a.click();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url; a.download = `veraxon-stats-${Date.now()}.csv`; a.click();
     URL.revokeObjectURL(url);
   };
 
-  if (authLoading || loading) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center font-inter">
-        <div className="w-8 h-8 border-4 border-[#0052cc]/20 border-t-[#0052cc] rounded-full animate-spin" />
-      </div>
-    );
-  }
+  if (loading) return <PageSpinner />;
+  if (!user || !userData) return <PageSpinner />;
+  if (userData.role === 'student') return <PageSpinner />;
+
+  const s = apiData?.stats;
+  const c = apiData?.charts;
+
+  const filteredActivity = (apiData?.recentActivity ?? []).filter(a =>
+    !search ||
+    (a.studentName || '').toLowerCase().includes(search.toLowerCase()) ||
+    (a.examTitle   || '').toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
-    <div className="min-h-screen bg-black flex font-inter text-white selection:bg-[#0052cc]">
+    <div className="h-screen bg-[#030303] flex flex-col font-inter text-white overflow-hidden">
       <div className="ambient-matrix-bg opacity-20" />
-      <Sidebar role="staff" />
+      <div className="flex flex-1 overflow-hidden">
+        <Sidebar role="staff" />
+        <div className="flex-1 ml-64 flex flex-col overflow-hidden">
+          <main className="flex-1 overflow-y-auto p-8 xl:p-10 custom-scrollbar">
 
-      <main className="flex-1 ml-64 p-8 overflow-y-auto">
-        {/* Header */}
-        <header className="flex items-center justify-between mb-8 border-b border-white/5 pb-6">
-          <div>
-            <span className="text-[9px] font-black text-white/30 uppercase tracking-[0.3em]">Intelligence</span>
-            <h1 className="text-3xl font-black uppercase italic tracking-tighter text-white flex items-center gap-3 mt-1">
-              <Activity className="w-8 h-8 text-[#0052cc]" /> Institutional Analytics
-            </h1>
-            <p className="text-[9px] text-white/30 uppercase tracking-widest mt-1">
-              {userData?.collegeName} • {userData?.department}
-            </p>
-          </div>
-          <button
-            onClick={handleExportCSV}
-            className="jira-btn-secondary !py-2.5 !px-5 flex items-center gap-2 text-[10px]"
-          >
-            <Download size={14} /> Export CSV
-          </button>
-        </header>
-
-        {/* Stat Cards */}
-        <div className="grid grid-cols-4 gap-4 mb-8">
-          {[
-            { label: 'Total Submissions', value: submissions.length, icon: <BarChart2 size={16} />, color: 'text-[#0052cc]', bg: 'bg-[#0052cc]/10' },
-            { label: 'Passed', value: passed, icon: <Trophy size={16} />, color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
-            { label: 'Avg Score', value: `${avg}%`, icon: <TrendingUp size={16} />, color: 'text-purple-400', bg: 'bg-purple-400/10' },
-            { label: 'Total Violations', value: totalViolations, icon: <AlertTriangle size={16} />, color: totalViolations > 0 ? 'text-red-400' : 'text-emerald-400', bg: totalViolations > 0 ? 'bg-red-400/10' : 'bg-emerald-400/10' },
-          ].map((s) => (
-            <motion.div
-              key={s.label}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="jira-premium-card !p-5 flex items-center gap-4"
-            >
-              <div className={`p-2.5 rounded-xl ${s.bg} ${s.color}`}>{s.icon}</div>
-              <div>
-                <p className="text-[9px] font-black text-white/30 uppercase tracking-widest">{s.label}</p>
-                <p className={`text-2xl font-black italic ${s.color}`}>{s.value}</p>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-
-        {/* Charts */}
-        {completed.length > 0 && (
-          <div className="grid grid-cols-3 gap-6 mb-8">
-            <div className="col-span-2 jira-premium-card !p-6">
-              <h3 className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-6">Score Distribution</h3>
-              <div className="h-[220px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={scoreData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                    <XAxis dataKey="name" stroke="rgba(255,255,255,0.2)" fontSize={10} axisLine={false} tickLine={false} />
-                    <YAxis stroke="rgba(255,255,255,0.2)" fontSize={10} axisLine={false} tickLine={false} domain={[0, 100]} />
-                    <Tooltip contentStyle={{ backgroundColor: '#161a22', border: '1px solid #30363d', borderRadius: '8px' }} />
-                    <Bar dataKey="score" fill="#0052cc" radius={[4, 4, 0, 0]} barSize={20} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+          {/* Header */}
+          <header className="flex items-center justify-between mb-8 border-b border-white/[0.06] pb-6">
+            <div>
+              <p className="text-[9px] font-black text-white/30 uppercase tracking-[0.3em]">Intelligence</p>
+              <h1 className="text-3xl font-black uppercase italic tracking-tighter text-white flex items-center gap-3 mt-1">
+                <Activity className="w-7 h-7 text-[#0052cc]" /> Institutional Analytics
+              </h1>
+              <p className="text-[10px] text-white/30 uppercase tracking-widest mt-1.5">
+                {userData.collegeName} · {userData.department}
+              </p>
             </div>
+            <button onClick={handleExportCSV} className="jira-btn-secondary !py-2.5 !px-5 flex items-center gap-2 text-[11px]">
+              <Download size={14} /> Export CSV
+            </button>
+          </header>
 
-            <div className="jira-premium-card !p-6">
-              <h3 className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-6">Pass Rate</h3>
-              <div className="h-[220px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={4} dataKey="value">
-                      {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i]} />)}
-                    </Pie>
-                    <Legend iconSize={10} iconType="circle" formatter={(val) => (
-                      <span className="text-[10px] text-white/60 uppercase font-bold">{val}</span>
-                    )} />
-                    <Tooltip contentStyle={{ backgroundColor: '#161a22', border: '1px solid #30363d', borderRadius: '8px' }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
+          {error && (
+            <div className="py-20 text-center border border-dashed border-white/[0.06] rounded-2xl">
+              <Activity className="w-12 h-12 text-white/10 mx-auto mb-4" />
+              <p className="text-[13px] font-bold text-white/30">{error}</p>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Candidates Table */}
-        <div className="bg-[#0a0a0f] border border-white/5 rounded-2xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-white/5 flex items-center gap-4">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-              <input
-                type="text"
-                placeholder="Search candidates..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="jira-input !pl-10 !py-2 !text-[11px]"
-              />
-            </div>
-            <span className="text-[10px] text-white/30 uppercase font-black tracking-widest ml-auto">
-              {filtered.length} records
-            </span>
-          </div>
-
-          <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr] gap-4 px-6 py-3 border-b border-white/5 bg-white/[0.01]">
-            {['Candidate', 'Score', 'Status', 'Violations', 'Date'].map((h) => (
-              <span key={h} className="text-[9px] font-black uppercase tracking-widest text-white/30">{h}</span>
-            ))}
-          </div>
-
-          <div className="divide-y divide-white/[0.03]">
-            {filtered.length === 0 ? (
-              <div className="py-16 text-center">
-                <p className="text-[11px] text-white/20 uppercase tracking-widest">No data available for this department.</p>
+          {fetching && !error && (
+            <>
+              <div className="grid grid-cols-4 gap-4 mb-8">
+                {[...Array(4)].map((_, i) => (
+                  <div key={i} className="jira-premium-card !p-5"><div className="flex items-center gap-4 mb-3"><Skel className="w-11 h-11" /><Skel className="h-3 w-20" /></div><Skel className="h-8 w-16" /></div>
+                ))}
               </div>
-            ) : (
-              filtered.map((sub) => {
-                const score = sub.score || 0;
-                const passed = score >= 40;
-                const completedAt = sub.completedAt?.toDate?.() || new Date();
+              <div className="grid grid-cols-3 gap-6 mb-8">
+                <div className="col-span-2 jira-premium-card !p-6"><Skel className="h-[220px]" /></div>
+                <div className="jira-premium-card !p-6"><Skel className="h-[220px]" /></div>
+              </div>
+            </>
+          )}
 
-                return (
-                  <div key={sub.id} className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr] gap-4 px-6 py-4 hover:bg-white/[0.02] transition-colors items-center">
+          {!fetching && !error && s && (
+            <>
+              {/* Stat cards */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                {[
+                  { label: 'Candidates',       value: s.candidatesCount,   icon: <Users size={16} />,         color: 'text-[#0052cc]',   bg: 'bg-[#0052cc]/10' },
+                  { label: 'Assessments',       value: s.testsCount,        icon: <BarChart2 size={16} />,     color: 'text-violet-400',  bg: 'bg-violet-400/10' },
+                  { label: 'Avg Score',         value: `${s.avgScore}%`,    icon: <TrendingUp size={16} />,    color: 'text-amber-400',   bg: 'bg-amber-400/10' },
+                  { label: 'Integrity',         value: `${s.integrityScore}%`, icon: <ShieldCheck size={16}/>, color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
+                ].map((item, i) => (
+                  <motion.div key={item.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }}
+                    className="jira-premium-card !p-5 flex items-center gap-4">
+                    <div className={`p-2.5 rounded-xl ${item.bg} ${item.color}`}>{item.icon}</div>
                     <div>
-                      <p className="font-black text-sm text-white">{sub.userName || 'Anonymous'}</p>
-                      <p className="text-[9px] text-white/30 mt-0.5">{sub.userId?.substring(0, 10)}...</p>
+                      <p className="text-[9px] font-black text-white/30 uppercase tracking-widest">{item.label}</p>
+                      <p className={`text-2xl font-black italic ${item.color}`}>{item.value}</p>
                     </div>
-                    <p className={`font-black text-sm ${passed ? 'text-emerald-400' : 'text-red-400'}`}>
-                      {score.toFixed(1)}%
-                    </p>
-                    <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-1 rounded border w-fit ${
-                      sub.status === 'disqualified' ? 'bg-red-500/10 text-red-400 border-red-500/20' :
-                      passed ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
-                      'bg-red-500/10 text-red-400 border-red-500/20'
-                    }`}>
-                      {sub.status === 'disqualified' ? 'Disqualified' : passed ? 'Passed' : 'Failed'}
-                    </span>
-                    <span className={`text-sm font-black ${(sub.totalViolations || 0) > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
-                      {sub.totalViolations || 0}
-                    </span>
-                    <span className="text-[10px] text-white/30">
-                      {completedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
-                    </span>
+                  </motion.div>
+                ))}
+              </div>
+
+              {/* Charts */}
+              {c?.scoreDistribution?.length > 0 && (
+                <div className="grid grid-cols-3 gap-6 mb-8">
+                  <div className="col-span-2 jira-premium-card !p-6">
+                    <p className="text-[10px] font-black text-white/35 uppercase tracking-[0.22em] mb-5">Score Distribution</p>
+                    <div className="h-[220px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={c.scoreDistribution}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                          <XAxis dataKey="name" stroke="rgba(255,255,255,0.2)" fontSize={9} axisLine={false} tickLine={false} />
+                          <YAxis stroke="rgba(255,255,255,0.2)" fontSize={9} axisLine={false} tickLine={false} domain={[0,100]} unit="%" />
+                          <Tooltip {...TOOLTIP_STYLE} formatter={v => [`${v}%`, 'Score']} />
+                          <Bar dataKey="score" fill="#0052cc" radius={[4,4,0,0]} maxBarSize={28} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
                   </div>
-                );
-              })
-            )}
-          </div>
+                  <div className="jira-premium-card !p-6">
+                    <p className="text-[10px] font-black text-white/35 uppercase tracking-[0.22em] mb-5">Pass Rate</p>
+                    <div className="h-[220px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie data={c.passRate} cx="50%" cy="50%" innerRadius={52} outerRadius={78} paddingAngle={3} dataKey="value"
+                            label={({ name, percent }) => `${name} ${Math.round(percent * 100)}%`} labelLine={false} style={{ fontSize: 9 }}>
+                            {c.passRate.map((e, i) => <Cell key={i} fill={e.fill} />)}
+                          </Pie>
+                          <Tooltip {...TOOLTIP_STYLE} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Violation breakdown */}
+              {c?.violationBreakdown?.length > 0 && (
+                <div className="jira-premium-card !p-6 mb-8">
+                  <p className="text-[10px] font-black text-white/35 uppercase tracking-[0.22em] mb-5">Violation Types</p>
+                  <div className="h-[180px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={c.violationBreakdown} layout="vertical">
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" horizontal={false} />
+                        <XAxis type="number" stroke="rgba(255,255,255,0.2)" fontSize={9} axisLine={false} tickLine={false} allowDecimals={false} />
+                        <YAxis dataKey="name" type="category" stroke="rgba(255,255,255,0.3)" fontSize={9} axisLine={false} tickLine={false} width={88} />
+                        <Tooltip {...TOOLTIP_STYLE} />
+                        <Bar dataKey="count" fill="#ef4444" radius={[0,4,4,0]} maxBarSize={20} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+
+              {/* Activity table */}
+              <div className="bg-[#0a0c10] border border-white/[0.06] rounded-2xl overflow-hidden">
+                <div className="px-6 py-4 border-b border-white/[0.05] flex items-center gap-4">
+                  <div className="relative flex-1 max-w-sm">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+                    <input type="text" placeholder="Search violations…" value={search} onChange={e => setSearch(e.target.value)}
+                      className="jira-input !pl-10 !py-2 !text-[11px]" />
+                  </div>
+                  <span className="text-[10px] text-white/30 font-black uppercase tracking-widest ml-auto">
+                    {filteredActivity.length} events
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-[2fr_2fr_1fr_1fr_1fr] gap-4 px-6 py-3 border-b border-white/[0.04] bg-white/[0.01]">
+                  {['Student','Assessment','Type','Severity','Time'].map(h => (
+                    <span key={h} className="text-[9px] font-black uppercase tracking-widest text-white/25">{h}</span>
+                  ))}
+                </div>
+
+                <div className="divide-y divide-white/[0.03]">
+                  {filteredActivity.length === 0 ? (
+                    <div className="py-14 text-center">
+                      <ShieldCheck size={32} className="text-emerald-400 mx-auto mb-3" />
+                      <p className="text-[11px] text-white/20 uppercase tracking-widest">No violations recorded</p>
+                    </div>
+                  ) : (
+                    filteredActivity.map((a, i) => (
+                      <motion.div key={a.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.03 }}
+                        className="grid grid-cols-[2fr_2fr_1fr_1fr_1fr] gap-4 px-6 py-3.5 hover:bg-white/[0.02] transition-colors items-center">
+                        <p className="text-[12px] font-bold text-white truncate">{a.studentName}</p>
+                        <p className="text-[11px] text-white/55 truncate">{a.examTitle}</p>
+                        <p className="text-[10px] font-bold text-white/60 capitalize">{a.type?.replace(/_/g, ' ')}</p>
+                        <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded border w-fit ${
+                          a.severity === 'breach' ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                        }`}>{a.severity}</span>
+                        <p className="text-[9px] text-white/25">
+                          {a.timestamp ? new Date(a.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}
+                        </p>
+                      </motion.div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+
+          </main>
+          <Footer />
         </div>
-      </main>
-      <Footer className="ml-64" />
+      </div>
     </div>
   );
 }

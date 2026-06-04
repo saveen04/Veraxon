@@ -196,11 +196,11 @@ export default function StaffAssignPage() {
   }
 
   return (
-    <div className="min-h-screen bg-black flex flex-col font-inter text-white selection:bg-[#0052cc]">
+    <div className="h-screen bg-black flex overflow-hidden flex-col font-inter text-white selection:bg-[#0052cc]">
       <div className="ambient-matrix-bg opacity-20" />
-      <div className="flex flex-1">
+      <div className="flex flex-1 overflow-hidden">
         <Sidebar role="staff" />
-        <main className="flex-1 ml-64 p-8 overflow-y-auto">
+        <div className="flex-1 ml-64 flex flex-col overflow-hidden"><main className="flex-1 overflow-y-auto p-8 custom-scrollbar">
           {/* Header */}
           <header className="flex items-center justify-between mb-8 border-b border-white/5 pb-6">
             <div>
@@ -482,8 +482,9 @@ export default function StaffAssignPage() {
             )}
           </AnimatePresence>
         </main>
+          <Footer />
+        </div>
       </div>
-      <Footer className="ml-64" />
     </div>
   );
 }

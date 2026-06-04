@@ -3,11 +3,12 @@ import React, { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion";
+import { VeraxonLogo } from "@/lib/brand";
+import { motion, useScroll, useTransform } from "framer-motion";
 import {
-  ChevronRight, Zap, ShieldCheck, Activity, Users, Eye,
+  ChevronRight, ShieldCheck, Activity, Users, Eye,
   Sparkles, GitBranch, Video, Database, Award, Terminal,
-  CheckCircle, Star, ArrowRight, Lock, Cpu, Globe
+  CheckCircle, Star, ArrowRight, Cpu, Globe
 } from "lucide-react";
 
 // ── Animated particle background ────────────────────────────────────────────
@@ -180,14 +181,16 @@ export default function LandingPage() {
       </div>
 
       {/* ── Sticky header ── */}
-      <header className={`fixed top-0 left-0 right-0 z-50 px-6 sm:px-12 py-4 flex items-center justify-between transition-all duration-300 ${
+      <header className={`fixed top-0 left-0 right-0 z-50 px-6 sm:px-12 py-3 flex items-center justify-between transition-all duration-300 ${
         scrolled ? "backdrop-blur-xl bg-black/70 border-b border-white/[0.06] shadow-2xl" : "bg-transparent"
       }`}>
-        <Link href="/" className="flex items-center gap-3 group">
-          <div className="w-9 h-9 bg-gradient-to-br from-[#0052cc] to-[#003d99] text-white flex items-center justify-center rounded-xl font-black text-lg italic shadow-[0_0_20px_rgba(0,82,204,0.5)] group-hover:shadow-[0_0_30px_rgba(0,82,204,0.7)] transition-all">
-            V
-          </div>
-          <span className="text-xl font-black tracking-tighter text-white uppercase italic">Veraxon</span>
+        <Link href="/" className="flex items-center gap-2.5 group">
+          <VeraxonLogo size="SM" theme="dark"
+            className="group-hover:scale-105 transition-transform duration-300 drop-shadow-[0_0_12px_rgba(0,82,204,0.4)]"
+          />
+          <span className="text-[15px] font-black tracking-tight text-white uppercase italic group-hover:text-[#0052cc] transition-colors">
+            Veraxon
+          </span>
         </Link>
         <nav className="hidden md:flex items-center gap-8">
           {["Features", "Security", "Analytics"].map(label => (

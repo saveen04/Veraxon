@@ -41,26 +41,43 @@ export default function StudentAssessmentsPage() {
 
     const loadPublishedTests = async (existingIds = []) => {
       try {
-        const pubQ = query(collection(db, 'tests'), where('status', '==', 'published'));
-        const pubSnap = await getDocs(pubQ);
+        const pubSnap = await getDocs(query(
+          collection(db, 'tests'),
+          where('status', '==', 'published')
+        ));
         return pubSnap.docs
           .map(d => ({ id: d.id, ...d.data() }))
           .filter(t => !existingIds.includes(t.id));
-      } catch {
+      } catch (e) {
+        console.warn('loadPublishedTests error:', e.code);
         return [];
       }
     };
 
-    // Listen for assignments where this student is in assignedTo array
+    // Single-field query only — avoids composite index requirement.
+    // Filter status === 'active' client-side.
     const q = query(
       collection(db, 'assignments'),
-      where('assignedTo', 'array-contains', user.uid),
-      where('status', '==', 'active')
+      where('assignedTo', 'array-contains', user.uid)
     );
 
     const unsub = onSnapshot(q, async (snap) => {
       if (didCancel) return;
-      const assignments = snap.docs.map(d => ({ assignmentId: d.id, ...d.data() }));
+
+      // Filter active assignments client-side
+      const assignments = snap.docs
+        .map(d => ({ assignmentId: d.id, ...d.data() }))
+        .filter(a => a.status === 'active');
+
+      if (assignments.length === 0) {
+        // No assignments at all — just show published tests
+        const pubTests = await loadPublishedTests();
+        if (!didCancel) {
+          setAssignedTests(pubTests);
+          setTestsLoading(false);
+        }
+        return;
+      }
 
       const testPromises = assignments.map(async (assignment) => {
         try {
@@ -77,7 +94,7 @@ export default function StudentAssessmentsPage() {
               assignedAt: assignment.assignedAt,
             };
           }
-        } catch { /* skip */ }
+        } catch { /* skip missing tests */ }
         return null;
       });
 
@@ -89,8 +106,9 @@ export default function StudentAssessmentsPage() {
         setAssignedTests([...resolved, ...pubTests]);
         setTestsLoading(false);
       }
-    }, async () => {
-      // Firestore permission denied or network error — fall back to published tests only
+    }, async (err) => {
+      // Any Firestore error (permission-denied, missing-index) → fall back to published tests
+      console.warn('assignments snapshot error:', err.code);
       if (!didCancel) {
         const pubTests = await loadPublishedTests();
         setAssignedTests(pubTests);
@@ -154,14 +172,15 @@ export default function StudentAssessmentsPage() {
   if (!loading && !user) return null;
 
   const regularTests = assignedTests.filter(t => !t.isRetake);
-  const retakeTests = assignedTests.filter(t => t.isRetake);
+  const retakeTests  = assignedTests.filter(t => t.isRetake);
 
   return (
-    <div className="min-h-screen bg-black flex flex-col font-inter text-white selection:bg-[#0052cc]">
+    <div className="h-screen bg-[#030303] flex flex-col font-inter text-white overflow-hidden selection:bg-[#0052cc]">
       <div className="ambient-matrix-bg opacity-20" />
-      <div className="flex flex-1">
+      <div className="flex flex-1 overflow-hidden">
         <Sidebar role="student" />
-        <main className="flex-1 ml-64 p-10 overflow-y-auto min-h-screen">
+        <div className="flex-1 ml-64 flex flex-col overflow-hidden">
+          <main className="flex-1 overflow-y-auto p-8 xl:p-10 custom-scrollbar">
           {/* Header */}
           <header className="flex items-center justify-between mb-8 border-b border-white/[0.06] pb-6">
             <div>
@@ -371,9 +390,11 @@ export default function StudentAssessmentsPage() {
               )}
             </div>
           </div>
-        </main>
+
+          </main>
+          <Footer />
+        </div>
       </div>
-      <Footer className="ml-64" />
     </div>
   );
 }

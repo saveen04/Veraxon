@@ -14,21 +14,35 @@ export default function NotificationDropdown() {
   const dropdownRef = useRef(null);
 
   useEffect(() => {
-    if (!userData || !userData.uid) return;
+    if (!userData?.uid) return;
 
+    // Single-field query only — no composite index needed.
+    // Sort client-side to avoid the (recipientId, timestamp) index requirement.
     const q = query(
       collection(db, 'notifications'),
-      where('recipientId', '==', userData.uid),
-      orderBy('timestamp', 'desc')
+      where('recipientId', '==', userData.uid)
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetched = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setNotifications(fetched);
-    });
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const fetched = snapshot.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => {
+            const at = a.timestamp?.toMillis?.() ?? a.timestamp?.seconds ?? 0;
+            const bt = b.timestamp?.toMillis?.() ?? b.timestamp?.seconds ?? 0;
+            return bt - at;
+          });
+        setNotifications(fetched);
+      },
+      (err) => {
+        // Silently ignore — notifications are non-critical
+        console.warn('[NotificationDropdown] listener error:', err.code);
+      }
+    );
 
     return () => unsubscribe();
-  }, [userData]);
+  }, [userData?.uid]);
 
   // Click outside listener
   useEffect(() => {

@@ -181,7 +181,7 @@ function AuthPageContent() {
 
         <div className="relative z-10 text-center px-12">
           {/* Dark bg → white logo */}
-          <VeraxonLogo size="XL" theme="dark" className="mb-10 mx-auto drop-shadow-[0_0_50px_rgba(0,82,204,0.6)]" />
+          <VeraxonLogo size="LG" theme="dark" className="mb-8 mx-auto drop-shadow-[0_0_40px_rgba(0,82,204,0.5)]" />
           <h1 className="text-8xl font-black tracking-tighter text-white uppercase italic leading-none">
             Veraxon
           </h1>

@@ -3,212 +3,154 @@ rules_version = '2';
 // ─────────────────────────────────────────────────────────────────────────────
 // Veraxon AI Assessment Platform — Firestore Security Rules
 // ─────────────────────────────────────────────────────────────────────────────
+// IMPORTANT: We do NOT use get() inside rules to avoid circular permission
+// errors. Role checks use request.auth.token.role (custom claims) where
+// available, with safe fallbacks for the users collection itself.
+// ─────────────────────────────────────────────────────────────────────────────
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Helper functions ─────────────────────────────────────────────────────
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-    function isOwner(uid) {
-      return isAuthenticated() && request.auth.uid == uid;
-    }
-    function userDoc() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-    }
-    function isAdmin() {
-      return isAuthenticated() && userDoc().role == 'admin';
-    }
-    function isStaff() {
-      return isAuthenticated() && (userDoc().role == 'staff' || userDoc().role == 'admin');
-    }
-    function isStudent() {
-      return isAuthenticated() && userDoc().role == 'student';
-    }
+    // ── Helpers ──────────────────────────────────────────────────────────────
+    function isAuth()   { return request.auth != null; }
+    function uid()      { return request.auth.uid; }
+    function isOwner(id){ return isAuth() && uid() == id; }
+
+    // Role from custom claims (set via Admin SDK) — falls back to 'student'
+    function role()     { return isAuth() ? request.auth.token.get('role', 'student') : ''; }
+    function isAdmin()  { return role() == 'admin'; }
+    function isStaff()  { return role() == 'staff' || role() == 'admin'; }
+    function isStudent(){ return role() == 'student'; }
 
     // ── /users/{userId} ──────────────────────────────────────────────────────
+    // A user can always read/write their own document.
+    // Staff/admin can read all user docs for candidate management.
     match /users/{userId} {
-      allow read:   if isOwner(userId) || isAdmin() || isStaff();
+      allow read:   if isOwner(userId) || isStaff();
       allow create: if isOwner(userId);
       allow update: if isOwner(userId) || isAdmin();
       allow delete: if isAdmin();
     }
 
-    // ── /tests/{testId} ─────────────────────────────────────────────────────
-    // Builder publishes here. Students can read published tests.
+    // ── /tests/{testId} ──────────────────────────────────────────────────────
     match /tests/{testId} {
-      allow read:   if isAuthenticated() && (
-                      isAdmin() ||
+      allow read:   if isAuth() && (
                       isStaff() ||
-                      (isStudent() && resource.data.status == 'published')
+                      resource.data.status == 'published'
                     );
       allow create: if isStaff();
-      allow update: if isAdmin() ||
-                      (isStaff() && resource.data.createdBy == request.auth.uid);
-      allow delete: if isAdmin() ||
-                      (isStaff() && resource.data.createdBy == request.auth.uid);
+      allow update: if isAdmin() || (isStaff() && resource.data.createdBy == uid());
+      allow delete: if isAdmin() || (isStaff() && resource.data.createdBy == uid());
     }
 
-    // ── /exams/{examId} ─────────────────────────────────────────────────────
-    // Legacy collection created by /api/exam/create
+    // ── /exams/{examId} ──────────────────────────────────────────────────────
     match /exams/{examId} {
-      allow read:   if isAuthenticated();
+      allow read:   if isAuth();
       allow create: if isStaff();
-      allow update: if isAdmin() || isStaff();
+      allow update: if isStaff();
       allow delete: if isAdmin();
     }
 
-    // ── /assessments/{assessmentId} ──────────────────────────────────────────
-    match /assessments/{assessmentId} {
-      allow read:   if isAuthenticated() && (
-                      isAdmin() ||
-                      isStaff() ||
-                      (isStudent() && resource.data.status == 'published')
-                    );
+    // ── /assessments/{id} ────────────────────────────────────────────────────
+    match /assessments/{id} {
+      allow read:   if isAuth() && (isStaff() || resource.data.status == 'published');
       allow create: if isStaff();
-      allow update: if isAdmin() ||
-                      (isStaff() && resource.data.createdBy == request.auth.uid);
-      allow delete: if isAdmin() ||
-                      (isStaff() && resource.data.createdBy == request.auth.uid);
+      allow update: if isAdmin() || (isStaff() && resource.data.createdBy == uid());
+      allow delete: if isAdmin() || (isStaff() && resource.data.createdBy == uid());
     }
 
-    // ── /submissions/{submissionId} ──────────────────────────────────────────
-    // Students write their own submission docs during exam.
-    match /submissions/{submissionId} {
-      allow read:   if isAuthenticated() && (
-                      isAdmin() ||
+    // ── /assignments/{id} ────────────────────────────────────────────────────
+    // Students read assignments that include their uid in assignedTo array.
+    match /assignments/{id} {
+      allow read:   if isAuth() && (
                       isStaff() ||
-                      isOwner(resource.data.userId)
-                    );
-      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.userId;
-      allow update: if isAuthenticated() && (
-                      isAdmin() ||
-                      isStaff() ||
-                      isOwner(resource.data.userId)
-                    );
-      allow delete: if isAdmin();
-    }
-
-    // ── /attempts/{attemptId} ─────────────────────────────────────────────────
-    match /attempts/{attemptId} {
-      allow read:   if isAuthenticated() && (
-                      isAdmin() ||
-                      isStaff() ||
-                      isOwner(resource.data.userId)
-                    );
-      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.userId;
-      allow update: if isAdmin() || isOwner(resource.data.userId);
-      allow delete: if isAdmin();
-    }
-
-    // ── /infractions/{infractionId} ───────────────────────────────────────────
-    // Proctoring violations — written client-side by ProctoringCamera
-    // and server-side by /api/proctor/log
-    match /infractions/{infractionId} {
-      allow read:   if isAuthenticated() && (
-                      isAdmin() ||
-                      isStaff() ||
-                      isOwner(resource.data.studentId)
-                    );
-      allow create: if isAuthenticated();  // Camera component + API route
-      allow update: if isAdmin() || isStaff();
-      allow delete: if isAdmin();
-    }
-
-    // ── /violations/{violationId} ─────────────────────────────────────────────
-    // Legacy name — kept for backwards compatibility
-    match /violations/{violationId} {
-      allow read:   if isAuthenticated() && (
-                      isAdmin() ||
-                      isStaff() ||
-                      isOwner(resource.data.studentId)
-                    );
-      allow create: if isAuthenticated();
-      allow update: if isAdmin() || isStaff();
-      allow delete: if isAdmin();
-    }
-
-    // ── /results/{resultId} ──────────────────────────────────────────────────
-    match /results/{resultId} {
-      allow read:   if isAuthenticated() && (
-                      isAdmin() ||
-                      isStaff() ||
-                      isOwner(resource.data.studentId)
-                    );
-      allow create: if isAdmin() || isStaff();
-      allow update: if isAdmin() || isStaff();
-      allow delete: if isAdmin();
-    }
-
-    // ── /sessions/{sessionId} ────────────────────────────────────────────────
-    match /sessions/{sessionId} {
-      allow read:   if isAuthenticated() && (
-                      isAdmin() ||
-                      isStaff() ||
-                      (isStudent() && resource.data.status == 'active')
+                      uid() in resource.data.assignedTo
                     );
       allow create: if isStaff();
-      allow update: if isAdmin() ||
-                      (isStaff() && resource.data.createdBy == request.auth.uid);
-      allow delete: if isAdmin();
+      allow update: if isStaff();
+      allow delete: if isAdmin() || isStaff();
     }
 
-    // ── /studentSessions/{studentSessionId} ──────────────────────────────────
-    match /studentSessions/{studentSessionId} {
-      allow read:   if isAuthenticated() && (
-                      isAdmin() ||
+    // ── /submissions/{id} ────────────────────────────────────────────────────
+    match /submissions/{id} {
+      allow read:   if isAuth() && (
                       isStaff() ||
-                      isOwner(resource.data.studentId)
+                      resource.data.userId == uid()
                     );
-      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.studentId;
-      allow update: if isAdmin() || isStaff() || isOwner(resource.data.studentId);
+      allow create: if isAuth() && request.resource.data.userId == uid();
+      allow update: if isAuth() && (isStaff() || resource.data.userId == uid());
       allow delete: if isAdmin();
     }
 
-    // ── /notifications/{notificationId} ──────────────────────────────────────
-    match /notifications/{notificationId} {
-      allow read:   if isOwner(resource.data.recipientId) || isOwner(resource.data.userId) || isAdmin();
+    // ── /infractions/{id} ────────────────────────────────────────────────────
+    match /infractions/{id} {
+      allow read:   if isAuth() && (isStaff() || resource.data.studentId == uid());
+      allow create: if isAuth();   // camera component + API route write here
+      allow update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    // ── /violations/{id} ─────────────────────────────────────────────────────
+    match /violations/{id} {
+      allow read:   if isAuth() && (isStaff() || resource.data.studentId == uid());
+      allow create: if isAuth();
+      allow update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    // ── /results/{id} ────────────────────────────────────────────────────────
+    match /results/{id} {
+      allow read:   if isAuth() && (isStaff() || resource.data.studentId == uid());
+      allow create: if isStaff();
+      allow update: if isStaff();
+      allow delete: if isAdmin();
+    }
+
+    // ── /notifications/{id} ──────────────────────────────────────────────────
+    match /notifications/{id} {
+      allow read:   if isAuth() && (
+                      resource.data.recipientId == uid() ||
+                      resource.data.userId == uid() ||
+                      isAdmin()
+                    );
       allow create: if isStaff() || isAdmin();
-      allow update: if isOwner(resource.data.recipientId) || isOwner(resource.data.userId) || isAdmin();
-      allow delete: if isOwner(resource.data.recipientId) || isOwner(resource.data.userId) || isAdmin();
+      allow update: if isAuth() && (resource.data.recipientId == uid() || isAdmin());
+      allow delete: if isAuth() && (resource.data.recipientId == uid() || isAdmin());
     }
 
-    // ── /questionBanks/{questionId} ──────────────────────────────────────────
-    match /questionBanks/{questionId} {
-      allow read:   if isAuthenticated();
+    // ── /sessions/{id} ───────────────────────────────────────────────────────
+    match /sessions/{id} {
+      allow read:   if isAuth() && (isStaff() || resource.data.status == 'active');
       allow create: if isStaff();
-      allow update: if isAdmin() ||
-                      (isStaff() && resource.data.createdBy == request.auth.uid);
-      allow delete: if isAdmin() ||
-                      (isStaff() && resource.data.createdBy == request.auth.uid);
+      allow update: if isStaff();
+      allow delete: if isAdmin();
     }
 
-    // ── /departments/{departmentId} ───────────────────────────────────────────
-    match /departments/{departmentId} {
-      allow read:   if isAuthenticated();
-      allow write:  if isAdmin();
+    // ── /studentSessions/{id} ────────────────────────────────────────────────
+    match /studentSessions/{id} {
+      allow read:   if isAuth() && (isStaff() || resource.data.studentId == uid());
+      allow create: if isAuth() && request.resource.data.studentId == uid();
+      allow update: if isStaff() || resource.data.studentId == uid();
+      allow delete: if isAdmin();
     }
 
-    // ── /colleges/{collegeId} ─────────────────────────────────────────────────
-    match /colleges/{collegeId} {
-      allow read:   if isAuthenticated();
-      allow write:  if isAdmin();
+    // ── /questionBanks/{id} ──────────────────────────────────────────────────
+    match /questionBanks/{id} {
+      allow read:   if isAuth();
+      allow create: if isStaff();
+      allow update: if isAdmin() || (isStaff() && resource.data.createdBy == uid());
+      allow delete: if isAdmin() || (isStaff() && resource.data.createdBy == uid());
     }
 
-    // ── /activityLogs/{logId} ─────────────────────────────────────────────────
-    match /activityLogs/{logId} {
-      allow read:  if isAdmin();
-      allow write: if false;
-    }
+    // ── /departments & /colleges ─────────────────────────────────────────────
+    match /departments/{id} { allow read: if isAuth(); allow write: if isAdmin(); }
+    match /colleges/{id}    { allow read: if isAuth(); allow write: if isAdmin(); }
 
-    // ── /stats/{statId} ──────────────────────────────────────────────────────
-    match /stats/{statId} {
-      allow read:  if isAuthenticated();
-      allow write: if false;
-    }
+    // ── /activityLogs & /stats ───────────────────────────────────────────────
+    match /activityLogs/{id} { allow read: if isAdmin(); allow write: if false; }
+    match /stats/{id}        { allow read: if isAuth();  allow write: if false; }
 
-    // ── Deny everything else ──────────────────────────────────────────────────
+    // ── Deny everything else ─────────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
     }

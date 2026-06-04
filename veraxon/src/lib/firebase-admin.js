@@ -53,8 +53,8 @@ function buildCredential() {
   // Option 3: Application Default Credentials (Google Cloud / Cloud Run / etc.)
   // Returning undefined tells the Admin SDK to use ADC automatically.
   console.warn(
-    "firebase-admin: No explicit service-account credentials found. " +
-      "Falling back to Application Default Credentials.",
+    "firebase-admin: No explicit credentials found. Falling back to Application Default Credentials. " +
+      "If running locally, set FIREBASE_ADMIN_SDK_KEY or individual FIREBASE_ADMIN_* vars in .env.local",
   );
   return undefined;
 }

@@ -2,6 +2,7 @@
 import cv2
 import numpy as np
 from utils.image_utils import check_image_quality
+from typing import Optional
 
 
 def analyse_environment(img: np.ndarray, prev_img: Optional[np.ndarray] = None) -> dict:

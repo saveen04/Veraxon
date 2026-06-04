@@ -89,11 +89,12 @@ export default function CandidatesPage() {
   );
 
   return (
-    <div className="min-h-screen bg-black flex font-inter">
+    <div className="h-screen bg-black flex overflow-hidden font-inter">
       <div className="ambient-matrix-bg" />
       <Sidebar role="staff" />
+      <div className="flex-1 ml-64 flex flex-col overflow-hidden">
+        <main className="flex-1 overflow-y-auto p-8 custom-scrollbar">
 
-      <main className="flex-1 ml-64 p-8 overflow-y-auto">
         {/* Top Header */}
         <header className="flex items-center justify-between mb-12">
           <div className="flex-1 max-w-xl relative group">
@@ -232,7 +233,9 @@ export default function CandidatesPage() {
            </div>
         </div>
       </main>
-      <Footer className="ml-64" />
+      <Footer />
+    </div>
+
     </div>
   );
 }

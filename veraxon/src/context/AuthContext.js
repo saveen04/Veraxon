@@ -1,128 +1,117 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import {
   onAuthStateChanged,
   signInWithPopup,
   GoogleAuthProvider,
-  signOut
+  signOut,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
+import { getDashboardRoute, normalizeRole, isStaffRole } from '@/lib/roles';
 import { useRouter } from 'next/navigation';
 
 const AuthContext = createContext({});
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [userData, setUserData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const router = useRouter();
+  /**
+   * authState holds EVERYTHING in one object so React batches the update
+   * into a single render. This eliminates the race where user is set but
+   * userData is still null, which was causing the role-redirect loop.
+   */
+  const [authState, setAuthState] = useState({
+    user:     null,
+    userData: null,
+    loading:  true,
+  });
 
-  // Synchronously hydrate auth state from localStorage cache to prevent visual flashes/infinite spinner on slower connections
-  useEffect(() => {
-    try {
-      const cached = localStorage.getItem('veraxon_user');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        setUserData(parsed);
-        setUser({
-          uid: parsed.uid,
-          email: parsed.email,
-          photoURL: parsed.photoURL,
-          displayName: parsed.username
-        });
-      }
-    } catch (e) {
-      console.warn('Failed to parse cached user session:', e);
-    }
-  }, []);
+  const router      = useRouter();
+  const resolvedRef = useRef(false);
 
   useEffect(() => {
-    // Safety timeout: force loading=false after 4 seconds no matter what.
-    // Increased from 1.5s because local dev compilation + Firebase cold-start
-    // can take 2-3s, causing premature redirects to /login on valid sessions.
-    const timeoutId = setTimeout(() => {
-      console.warn('Auth loading safety timeout reached. Forcing loading=false.');
-      setLoading(false);
-    }, 4000);
-
-    // Guard: if auth is not initialized, stop loading immediately
     if (!auth) {
-      setLoading(false);
-      clearTimeout(timeoutId);
+      setAuthState({ user: null, userData: null, loading: false });
       return;
     }
 
-    let unsubscribe = () => {};
-    try {
-      unsubscribe = onAuthStateChanged(auth, async (user) => {
-        // Clear timeout since the auth state resolved
-        clearTimeout(timeoutId);
+    // Hard 6-second safety timeout — prevents infinite spinner if Firebase
+    // never responds (offline, bad config, etc.)
+    const timeoutId = setTimeout(() => {
+      if (!resolvedRef.current) {
+        console.warn('[AuthContext] Timeout — forcing loading=false');
+        setAuthState(prev => ({ ...prev, loading: false }));
+      }
+    }, 6000);
 
-        if (user) {
-          setUser(user);
-          // Fetch additional user data from Firestore
-          try {
-            const userDoc = await getDoc(doc(db, 'users', user.uid));
-            if (userDoc.exists()) {
-              const data = { ...userDoc.data(), uid: user.uid };
-              setUserData(data);
-
-              // Minimize data stored in localStorage to only what's needed for the session/routing
-              const minimalData = {
-                uid: user.uid,
-                email: data.email,
-                role: data.role,
-                username: data.username,
-                photoURL: data.photoURL || user.photoURL || null,
-                collegeName: data.collegeName,
-                department: data.department,
-                profileCompleted: data.profileCompleted || false
-              };
-
-              try {
-                localStorage.setItem('veraxon_user', JSON.stringify(minimalData));
-                // Sync to cookies for Next.js Middleware edge routing
-                const token = await user.getIdToken();
-                document.cookie = `firebaseAuthToken=${token}; path=/; max-age=3600; SameSite=Strict`;
-                document.cookie = `userRole=${data.role}; path=/; max-age=3600; SameSite=Strict`;
-                document.cookie = `profileCompleted=${!!data.profileCompleted}; path=/; max-age=3600; SameSite=Strict`;
-              } catch (e) {
-                if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED') {
-                  console.warn('LocalStorage quota exceeded. Clearing non-essential data.');
-                  localStorage.clear();
-                  localStorage.setItem('veraxon_user', JSON.stringify(minimalData));
-                }
-              }
-            } else {
-              console.warn('User document not found in Firestore.');
-              setUserData(null);
-            }
-          } catch (error) {
-            console.error('Error fetching user data from Firestore:', error);
-            if (error.code === 'permission-denied') {
-              console.error('Firestore Permission Denied. Please check your security rules.');
-            }
-            setUserData(null);
-          }
-        } else {
-          setUser(null);
-          setUserData(null);
-          try {
-            localStorage.removeItem('veraxon_user');
-            document.cookie = "firebaseAuthToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-            document.cookie = "userRole=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-            document.cookie = "profileCompleted=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-          } catch (e) { /* ignore storage errors on signout */ }
-        }
-        setLoading(false);
-      });
-    } catch (err) {
-      console.error('onAuthStateChanged setup error:', err);
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      resolvedRef.current = true;
       clearTimeout(timeoutId);
-      setLoading(false);
-    }
+
+      if (!firebaseUser) {
+        // Signed out — clear everything in ONE update
+        setAuthState({ user: null, userData: null, loading: false });
+        try {
+          localStorage.removeItem('veraxon_user');
+          document.cookie = 'firebaseAuthToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+          document.cookie = 'userRole=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+          document.cookie = 'profileCompleted=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+        } catch { /* ignore */ }
+        return;
+      }
+
+      // Fetch Firestore profile before resolving.
+      // Do not fall back to cached role data — role changes must be enforced from Firestore.
+      let profileData = null;
+      try {
+        const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
+        if (snap.exists()) {
+          const data = snap.data();
+          const verifiedRole = normalizeRole(data.role);
+
+          profileData = {
+            ...data,
+            uid: firebaseUser.uid,
+            role: verifiedRole || data.role || null,
+          };
+
+          const minimal = {
+            uid: firebaseUser.uid,
+            email: profileData.email,
+            role: profileData.role,
+            username: profileData.username,
+            photoURL: profileData.photoURL || firebaseUser.photoURL || null,
+            collegeName: profileData.collegeName || '',
+            department: profileData.department || '',
+            profileCompleted: profileData.profileCompleted || false,
+          };
+
+          try {
+            localStorage.setItem('veraxon_user', JSON.stringify(minimal));
+            const token = await firebaseUser.getIdToken();
+            document.cookie = `firebaseAuthToken=${token}; path=/; max-age=3600; SameSite=Strict`;
+            document.cookie = `userRole=${minimal.role || ''}; path=/; max-age=3600; SameSite=Strict`;
+            document.cookie = `profileCompleted=${!!profileData.profileCompleted}; path=/; max-age=3600; SameSite=Strict`;
+          } catch { /* ignore */ }
+        } else {
+          console.warn('[AuthContext] No Firestore doc for uid:', firebaseUser.uid);
+        }
+      } catch (err) {
+        console.error('[AuthContext] Firestore fetch error:', err.code, err.message);
+      }
+
+      if (!profileData) {
+        setAuthState({ user: firebaseUser, userData: null, loading: false });
+        return;
+      }
+
+      // Single atomic setState — user, userData, and loading=false together
+      setAuthState({
+        user: firebaseUser,
+        userData: profileData,
+        loading: false,
+      });
+    });
 
     return () => {
       clearTimeout(timeoutId);
@@ -132,52 +121,51 @@ export const AuthProvider = ({ children }) => {
 
   const googleSignIn = async (selectedRole) => {
     const provider = new GoogleAuthProvider();
-    try {
-      const result = await signInWithPopup(auth, provider);
-      const userDoc = await getDoc(doc(db, 'users', result.user.uid));
+    const result = await signInWithPopup(auth, provider);
+    const snap = await getDoc(doc(db, 'users', result.user.uid));
 
-      if (!userDoc.exists()) {
-        if (!selectedRole) throw new Error('Role selection required for new accounts.');
-
-        await setDoc(doc(db, 'users', result.user.uid), {
-          email: result.user.email,
-          username: result.user.displayName || '',
-          role: selectedRole,
-          photoURL: result.user.photoURL || null,
-          createdAt: new Date(),
-          profileCompleted: false
-        });
-        return { isNew: true, role: selectedRole, profileCompleted: false };
-      } else {
-        const data = userDoc.data();
-
-        // Opportunistically update photoURL if missing in DB
-        if (!data.photoURL && result.user.photoURL) {
-          await setDoc(doc(db, 'users', result.user.uid), { photoURL: result.user.photoURL }, { merge: true });
-        }
-
-        // If a role was selected but user already exists, we enforce their existing role to prevent role swapping
-        return {
-          isNew: false,
-          role: data.role,
-          profileCompleted: !!data.profileCompleted,
-          roleMismatch: selectedRole && data.role !== selectedRole
-        };
-      }
-    } catch (error) {
-      console.error('Google Sign In Error:', error);
-      throw error;
+    if (!snap.exists()) {
+      if (!selectedRole) throw new Error('Role selection required for new accounts.');
+      await setDoc(doc(db, 'users', result.user.uid), {
+        email: result.user.email,
+        username: result.user.displayName || '',
+        role: selectedRole,
+        photoURL: result.user.photoURL || null,
+        createdAt: new Date(),
+        profileCompleted: false,
+      });
+      return { isNew: true, role: normalizeRole(selectedRole), profileCompleted: false };
     }
+
+    const data = snap.data();
+    const verifiedRole = normalizeRole(data.role);
+
+    if (!data.photoURL && result.user.photoURL) {
+      await setDoc(
+        doc(db, 'users', result.user.uid),
+        { photoURL: result.user.photoURL },
+        { merge: true }
+      );
+    }
+
+    return {
+      isNew: false,
+      role: verifiedRole,
+      profileCompleted: !!data.profileCompleted,
+      roleMismatch: selectedRole && verifiedRole && normalizeRole(selectedRole) !== verifiedRole,
+    };
   };
 
   const logOut = async () => {
     try {
       await signOut(auth);
       router.push('/login');
-    } catch (error) {
-      console.error('Sign Out Error:', error);
+    } catch (err) {
+      console.error('[AuthContext] signOut error:', err);
     }
   };
+
+  const { user, userData, loading } = authState;
 
   return (
     <AuthContext.Provider value={{ user, userData, loading, googleSignIn, logOut }}>
